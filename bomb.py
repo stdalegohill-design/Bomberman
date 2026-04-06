@@ -1,90 +1,48 @@
 """
-BOMB.PY - Sistema de Bombas
-============================
+Sistema de bombas con explosión, pateo y física de empuje.
 
-Jerarquía de herencia:
-    AnimatedEntity (base pygame.sprite.Sprite)
-     Bomb
+Este módulo implementa la clase Bomb y clases relacionadas para el sistema
+completo de bombas del juego. Incluye temporizador, cálculo de explosión
+en cruz, pateo (kick) con física, empuje de jugadores y sistema per-player
+de colisión para multiplayer.
 
-Implementa la bomba del juego con temporizador, explosión, pateo y empuje.
-Hereda directamente de AnimatedEntity (no necesita movimiento complejo).
+Clases Exportadas:
+    - Bomb: Bomba con temporizador, explosión y pateo
+    - GPSBomb: Bomba inteligente que persigue al jugador (Robot)
+    - Explosion: Representación visual de explosión
+    - SnowTile: Baldosa de hielo dejada por Snow
+    - PuddleTile: Charco dejado por Water
+    - EnemyPowerup: Powerup especial de Globe
 
-Clase:
-------
+Características Principales:
+    - Temporizador configurable (default 3 segundos)
+    - Explosión en patrón de cruz con rango variable
+    - Pateo (kick) con física y empuje de jugadores
+    - Sistema per-player para colisión en multiplayer
+    - Bombas GPS con pathfinding propio
+    - Cooldown de pateo para evitar spam
 
-Bomb(AnimatedEntity):
-    Bomba colocada por jugadores o enemigos.
+Uso Típico:
+    # Colocar bomba
+    bomb = Bomb(
+        pos=(player.x, player.y),
+        owner_id=player.player_id,
+        explosion_range=player.bomb_range
+    )
     
-    Hereda de: AnimatedEntity
-    No tiene clases hijas
+    # En game loop
+    bomb.update(dt, maze, players)
     
-    Atributos principales:
-    - timer: Tiempo restante hasta explosión (segundos)
-    - exploded: Estado de explosión (bool)
-    - explosion_range: Alcance de la explosión (celdas)
-    - explosion_rects: Lista de rectángulos de explosión
-    
-    Pateo (kick):
-    - is_being_kicked: Si está siendo pateada
-    - kick_direction: Dirección del pateo (dx, dy)
-    - kick_speed: Velocidad durante pateo
-    - kick_distance: Distancia recorrida en pateo actual
-    
-    Empuje (push):
-    - is_being_pushed: Si está siendo empujada
-    - push_direction: Dirección del empuje
-    - push_speed: Velocidad durante empuje
-    
-    Sistema de colisión:
-    - is_solid: Si colisiona con jugadores
-    - can_collide_with_player: Si puede ser pateada
-    - owner_id: ID del dueño (1-4 para jugadores, 'robot', 'barrel')
-    
-    Métodos principales:
-    --------------------
-    
-    Temporizador y explosión:
-    - update_timer(): Decrementa timer y explota si llega a 0
-    - trigger_explosion(): Fuerza explosión inmediata
-    - calculate_explosion(): Calcula celdas afectadas en cruz
-    
-    Pateo (kick):
-    - check_kick_collision(): Detecta colisión con jugador para patear
-    - try_kick(): Intenta patear si jugador está en celda adyacente
-    - start_kick(): Inicia pateo en dirección dada
-    - update_kick_movement(): Actualiza posición durante pateo
-    - stop_kick(): Detiene pateo y vuelve sólida
-    
-    Empuje (push):
-    - start_push(): Inicia empuje (bomba empuja a otra bomba)
-    - update_push_movement(): Actualiza posición durante empuje
-    - stop_push(): Detiene empuje
-    
-    Sistema de ownership:
-    - check_player_exit(): Verifica si owner salió de celda
-    - check_all_players_exit(): Verifica si todos salieron
-    
-    Colisiones durante movimiento:
-    - Raycasting predictivo: Verifica espacio detrás del jugador
-    - Detección con enemigos: Stun al impactar
-    - Detección con otras bombas: Empuje en cadena
-    - Detección con muros: Detiene movimiento
-    
-    Principal:
-    - update(): Coordina timer, explosión, pateo, empuje
+    # Verificar explosión
+    if bomb.exploded:
+        damage_rects = bomb.explosion_rects
 
-Uso típico:
------------
-    # Cárear bomba
-    bomb = Bomb(pos=(x, y), owner_id=1)
-    bomb.explosion_range = 3  # Powerup de rango
-    
-    # Actualizar cada frame
-    bomb.update(dt, maze, owner, all_players, other_bombs, enemies)
-    
-    # Verificar pateo
-    if bomb.check_kick_collision(player, maze):
-        print("Bomba pateada!")
+Notas de Implementación:
+    - El patrón de explosión considera obstáculos (detiene en muro)
+    - Los ladrillos bloquean pero son destruidos
+    - El pateo usa cooldown de 300ms para evitar spam
+    - El sistema per-player permite empujar bombas entre jugadores
+    - Las bombas GPS persiguen con pathfinding A*
 """
 
 

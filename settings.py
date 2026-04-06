@@ -280,7 +280,7 @@ class BombermanConfig:
 class BombConfig:
     SIZE = 32
     
-    FUSE_TIME = 3.0
+    FUSE_TIME = 5.0
     EXPLOSION_DURATION = 0.8
 
     BASE_RANGE = 2
@@ -452,9 +452,9 @@ class GlobeConfig:
     BOMB_REACTION_TIME = 1.0
 
 class AudioConfig:
-    MASTER_VOLUME = 0.6
-    MUSIC_VOLUME = 0.6
-    SFX_VOLUME = 0.5
+    MASTER_VOLUME = 0.2
+    MUSIC_VOLUME = 0.2
+    SFX_VOLUME = 0.1
     
     MUSIC_ENABLED = True
     SFX_ENABLED = True
@@ -511,13 +511,13 @@ class LevelConfig:
     """
     ENEMIES_PER_LEVEL = {
         1: {
-            'ghost': 2,
-            'snow': 2,
-            'bear': 1,
-            'barrel': 1,
-            'robot': 1,
-            'water': 1,
-            'globe': 1,
+            'ghost': 4,
+            'snow': 3,
+            'bear': 4,
+            'barrel': 3,
+            'robot': 6,
+            'water': 2,
+            'globe': 3,
         },
         2: {
             'ghost': 3,

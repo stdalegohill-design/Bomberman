@@ -1,9 +1,40 @@
 """
-UTILS.PY - Utilidades y Funciones Compartidas
-==============================================
+Funciones utilitarias compartidas entre módulos.
 
-Contiene funciones helper que se usan en múltiples partes del código.
-Reduce duplicación y facilita mantenimiento.
+Este módulo centraliza funciones helper usadas en múltiples partes del
+proyecto, reduciendo duplicación de código y facilitando mantenimiento.
+Incluye utilidades para carga de recursos, matemáticas, colisiones,
+renderizado de UI y debugging.
+
+Las funciones están organizadas por categoría:
+- Carga de recursos: Imágenes y sonidos con sistema de caché
+- Matemáticas y geometría: Distancias, normalización, interpolación
+- Colisiones y física: Detección rect-rect, punto-rect, círculo-círculo
+- Texto y UI: Renderizado de texto multilínea, barras de salud
+- Efectos visuales: Partículas, flashes, screen shake
+- Animación: Timer helper para cooldowns
+- Debug: Visualización de hitboxes, paths y puntos
+
+Funciones Principales:
+    - load_image(): Carga imagen con caché automático y placeholder
+    - distance(): Distancia euclidiana entre dos puntos
+    - manhattan_distance(): Distancia Manhattan (taxicab)
+    - draw_text(): Renderizado de texto con alineación y sombra
+    - draw_health_bar(): Barra de vida con fondo y relleno
+    - Timer: Clase helper para manejar cooldowns y duraciones
+
+Uso Típico:
+    from utils import load_image, distance, draw_text
+    
+    sprite = load_image('player.png', scale=(32, 32))
+    dist = distance(player.pos, enemy.pos)
+    draw_text(screen, "SCORE: 1000", (10, 10), font)
+
+Notas:
+    El caché de imágenes (_image_cache) persiste durante la ejecución.
+    Para hot-reload manual de assets, usar clear_image_cache().
+    Las funciones de debug (draw_debug_*) solo renderizan si están
+    habilitadas en settings.DebugConfig.
 """
 
 import pygame
@@ -17,15 +48,24 @@ _image_cache = {}  # Cache de imágenes cargadas
 
 def load_image(filename, colorkey=None, scale=None):
     """
-    Carga una imagen con cache automático.
+    Carga una imagen con sistema de caché automático.
+    
+    Verifica primero el caché antes de cargar desde disco para evitar
+    I/O repetido. Si la carga falla, retorna un placeholder magenta
+    (255, 0, 255) de 32x32 para debugging visual inmediato.
     
     Args:
-        filename: Nombre del archivo (ej: 'player.png')
-        colorkey: Color transparente opcional (-1 para usar topleft pixel)
-        scale: Tupla (width, height) para escalar la imagen
+        filename: Nombre del archivo relativo a IMAGES_DIR.
+        colorkey: Color transparente opcional. -1 usa pixel top-left.
+        scale: Tupla (width, height) para redimensionar después de cargar.
     
     Returns:
-        Surface de pygame con la imagen cargada
+        pygame.Surface cargada y configurada. Placeholder si falla.
+    
+    Notas:
+        El caché usa (filename, colorkey, scale) como clave única.
+        Diferentes escalas de la misma imagen se cachean por separado.
+        El placeholder magenta facilita identificar assets faltantes.
     """
     # Verificar cache
     cache_key = (filename, colorkey, scale)
@@ -76,16 +116,24 @@ def load_sound(filename):
 
 def apply_tint(surface, tint_color):
     """
-    Aplica un tinte de color a una superficie (palette swap programático).
-    Los píxeles oscuros absorben poco tinte; los claros absorben más.
-    Usa BLEND_MULT: multiplica cada canal RGB del sprite por el tinte / 255.
-
+    Aplica tinte de color programático (palette swap) a una superficie.
+    
+    Usa pygame.BLEND_RGB_MULT para multiplicar cada canal RGB del sprite
+    por el color de tinte. Los píxeles oscuros absorben poco tinte mientras
+    que los claros se tiñen fuertemente. Esto permite crear variantes de
+    color sin duplicar sprites (ej: jugadores multicolor).
+    
     Args:
-        surface:    pygame.Surface original (con alpha)
-        tint_color: Tupla RGB (r, g, b) o None para sin tinte
-
+        surface: pygame.Surface original con canal alpha.
+        tint_color: Tupla RGB (r, g, b). None retorna original sin cambios.
+    
     Returns:
-        Nueva Surface con el tinte aplicado (el original no se modifica)
+        Nueva Surface con tinte aplicado. El original no se modifica.
+    
+    Notas:
+        El tinte blanco (255, 255, 255) no cambia nada (multiplicar por 1).
+        El tinte negro (0, 0, 0) produce superficie negra (multiplicar por 0).
+        Para mejores resultados, usar sprites en escala de grises como base.
     """
     if tint_color is None:
         return surface
@@ -264,16 +312,24 @@ def circle_collision(pos1, radius1, pos2, radius2):
 def draw_text(surface, text, pos, font, color=Colors.WHITE, 
               align='left', shadow=False):
     """
-    Dibuja texto en pantalla con opciones avanzadas.
+    Renderiza texto en pantalla con alineación y sombra opcional.
     
     Args:
-        surface: Superficie donde dibujar
-        text: Texto a dibujar
-        pos: Tupla (x, y)
-        font: pygame.font.Font
-        color: Color del texto
-        align: 'left', 'center', 'right'
-        shadow: Si True, dibuja sombra
+        surface: Superficie destino donde dibujar.
+        text: Texto a renderizar (convertido a str automáticamente).
+        pos: Tupla (x, y). Interpretación según align.
+        font: pygame.font.Font para renderizar.
+        color: Color del texto. Default blanco.
+        align: Alineación horizontal ('left', 'center', 'right').
+        shadow: Si True, dibuja sombra negra offset +2,+2.
+    
+    Returns:
+        pygame.Rect del texto renderizado (útil para detectar clicks).
+    
+    Notas:
+        Con align='center', pos es el centro del texto.
+        Con align='right', pos.x es el borde derecho.
+        La sombra se dibuja primero (debajo del texto principal).
     """
     text_surface = font.render(str(text), True, color)
     text_rect = text_surface.get_rect()
@@ -397,7 +453,30 @@ def draw_screen_shake_offset():
 # UTILIDADES DE ANIMACIÓN
 
 class Timer:
-    """Timer simple para manejar cooldowns y duraciones."""
+    """
+    Timer simple para cooldowns, duraciones y animaciones.
+    
+    Facilita el manejo de temporizadores sin necesidad de variables
+    separadas para tiempo acumulado y duración. Útil para cooldowns
+    de habilidades, animaciones temporizadas y estados temporales.
+    
+    Attributes:
+        duration (float): Duración total en segundos.
+        time (float): Tiempo acumulado en segundos.
+        active (bool): Si el timer está corriendo actualmente.
+    
+    Uso Típico:
+        # Cooldown de bomba
+        timer = Timer(2.0, autostart=True)
+        
+        # En update loop
+        if timer.update(dt):
+            print("Timer completado!")
+        
+        # Verificar progreso
+        if timer.progress > 0.5:
+            print("Más de la mitad completado")
+    """
     
     def __init__(self, duration, autostart=False):
         self.duration = duration
@@ -405,7 +484,19 @@ class Timer:
         self.active = autostart
     
     def update(self, dt):
-        """Actualiza el timer."""
+        """
+        Actualiza el timer acumulando delta time.
+        
+        Args:
+            dt: Delta time en segundos desde último frame.
+        
+        Returns:
+            True si el timer completó su duración este frame, False si no.
+        
+        Notas:
+            Al completarse, el timer se desactiva automáticamente (active=False).
+            Llamar update() cuando active=False no hace nada y retorna False.
+        """
         if self.active:
             self.time += dt
             if self.time >= self.duration:

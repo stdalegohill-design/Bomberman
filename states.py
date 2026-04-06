@@ -1,346 +1,52 @@
 """
-STATES.PY - Sistema de Estados (State Pattern)
-===============================================
+Sistema de gestión de estados del juego.
 
-Implementa el patrón State para gestionar los diferentes estados del juego,
-eliminando el "código espagueti" del game loop tradicional. Cada estado
-es una clase independiente con su propia lógica de input, update y draw.
+Este módulo implementa el patrón State para manejar las diferentes
+pantallas y flujos del juego (menú, selección, gameplay, pausa, etc.).
+Cada estado es una clase independiente que maneja su propia lógica de
+input, update y renderizado.
 
-Estados disponibles:
-- MENU: Menú principal
-- PLAYER_SELECT: Selección de cantidad de jugadores
-- DIFFICULTY_SELECT: Selección de dificultad
-- PLAYING: Nivel en curso
-- PAUSED: Juego pausado
-- GAMEOVER: Derrota (todos los jugadores muertos)
-- VICTORY: Victoria (nivel completado)
+Arquitectura:
+    StateManager orquesta transiciones entre estados, llamando enter()
+    y exit() automáticamente. Los estados reciben una referencia a Game
+    para acceder a recursos compartidos (screen, fonts, audio).
 
-Jerarquía de clases:
-    State (base abstracta)
-     MenuState
-     PlayerSelectState
-     DifficultySelectState
-     PlayingState
-     PausedState
-     GameOverState
-     VictoryState
-    
-    StateManager (gestor independiente)
+Jerarquía de Estados:
+    State (Clase Base Abstracta)
+        - MenuState: Menú principal con opciones
+        - DifficultySelectState: Selección de dificultad
+        - PlayerSelectState: Selección de cantidad de jugadores
+        - PlayingState: Gameplay activo con GameLevelManager
+        - PausedState: Pausa durante gameplay
+        - GameOverState: Pantalla de derrota
+        - VictoryState: Pantalla de victoria
 
-Clases:
--------
+Clases Exportadas:
+    - State: Clase base abstracta
+    - StateManager: Gestor de transiciones
+    - MenuState: Menú principal
+    - DifficultySelectState: Selector de dificultad
+    - PlayerSelectState: Selector de jugadores
+    - PlayingState: Estado de juego activo
+    - PausedState: Pausa
+    - GameOverState: Pantalla de derrota
+    - VictoryState: Pantalla de victoria
 
-State:
-    Clase base abstracta para todos los estados.
-    
-    No hereda de ninguna clase
-    Heredada por: Todos los estados del juego
-    
-    Define la interfaz que todos los estados deben implementar:
-    
-    Métodos abstractos:
-    - enter(): Llamado al entrar al estado
-    - exit(): Llamado al salir del estado
-    - handle_events(): Procesa eventos de input
-    - update(): Actualiza lógica del estado (dt)
-    - draw(): Renderiza el estado
-    
-    Atributo común:
-    - game: Referencia al Game principal (acceso a recursos)
-
-MenuState(State):
-    Menú principal del juego.
-    
-    Hereda de: State
-    
-    Opciones del menú:
-    - JUGAR: Ir a selección de jugadores
-    - DIFICULTAD: Ir a selección de dificultad
-    - SALIR: Cerrar el juego
-    
-    Controles:
-    - Arriba/Abajo: Navegar opciones
-    - Enter/Espacio: Seleccionar opción
-    - ESC: Salir del juego
-    
-    Atributos:
-    - selected_option: Índice de opción seleccionada
-    - options: Lista de opciones disponibles
-    - title_colors: Colores animados del título
-    
-    Métodos principales:
-    - enter(): Reproduce música de menú
-    - handle_events(): Navegación y selección
-    - update(): Animación del título
-    - draw(): Renderiza menú con estilo retro
-    - draw_big_title(): Dibuja título "BOMBERMAN"
-    
-    Métodos privados:
-    - _skip_to_enabled(): Salta opciones deshabilitadas
-    - _select_option(): Ejecuta opción seleccionada
-    - _draw_bg(): Dibuja fondo del menú
-
-PlayerSelectState(State):
-    Selección de cantidad de jugadores (1-4).
-    
-    Hereda de: State
-    
-    Opciones:
-    - 1 JUGADOR
-    - 2 JUGADORES
-    - 3 JUGADORES (futuro)
-    - 4 JUGADORES (futuro)
-    - VOLVER
-    
-    Controles:
-    - Arriba/Abajo: Navegar
-    - Enter/Espacio: Confirmar
-    - ESC: Volver a menú
-    
-    Atributos:
-    - selected: Índice seleccionado
-    
-    Métodos principales:
-    - enter(): Inicializa selección
-    - handle_events(): Navegación y confirmación
-    - draw(): Renderiza opciones
-    
-    Métodos privados:
-    - _confirm(): Inicia nivel con jugadores seleccionados
-
-DifficultySelectState(State):
-    Selección de dificultad del juego.
-    
-    Hereda de: State
-    
-    Dificultades:
-    - FÁCIL: Enemigos lentos, jugador resistente
-    - NORMAL: Valores balanceados
-    - DIFÍCIL: Enemigos rápidos, jugador vulnerable
-    - EXPERTO: Muy difícil, para veteranos
-    - VOLVER
-    
-    Controles:
-    - Arriba/Abajo: Navegar
-    - Enter/Espacio: Confirmar
-    - ESC: Volver a menú
-    
-    Atributos:
-    - selected: Índice seleccionado
-    - difficulties: Lista de dificultades
-    
-    Métodos principales:
-    - enter(): Inicializa selección
-    - handle_events(): Navegación y confirmación
-    - draw(): Renderiza opciones con descripción
-    
-    Métodos privados:
-    - _select_difficulty(): Aplica dificultad seleccionada
-
-PlayingState(State):
-    Estado principal del juego (nivel en curso).
-    
-    Hereda de: State
-    
-    Delega toda la lógica del gameplay a LevelManager.
-    Este estado es simplemente un wrapper que conecta el
-    StateManager con el LevelManager.
-    
-    Atributos:
-    - level: Instancia de LevelManager
-    
-    Métodos principales:
-    - enter(): Cárea y carga el nivel
-    - exit(): Limpia recursos del nivel
-    - handle_events(): Delega a level + pausa con ESC
-    - update(): Delega a level + verifica fin
-    - draw(): Delega a level
-    
-    Transiciones:
-    - ESC  PausedState
-    - level.gameover  GameOverState
-    - level.victory  VictoryState
-
-PausedState(State):
-    Juego pausado.
-    
-    Hereda de: State
-    
-    Opciones:
-    - CONTINUAR: Volver a PlayingState
-    - REINICIAR: Reiniciar nivel actual
-    - MENÚ PRINCIPAL: Volver al menú
-    
-    Controles:
-    - Arriba/Abajo: Navegar
-    - Enter/Espacio: Seleccionar
-    - ESC: Continuar (volver a juego)
-    
-    Atributos:
-    - selected_option: Opción seleccionada
-    - options: Lista de opciones
-    
-    Métodos principales:
-    - enter(): Pausa música del nivel
-    - handle_events(): Navegación y selección
-    - draw(): Renderiza menú sobre el juego pausado
-    
-    Métodos privados:
-    - _select_option(): Ejecuta opción seleccionada
-
-GameOverState(State):
-    Pantalla de derrota.
-    
-    Hereda de: State
-    
-    Muestra:
-    - Mensaje "GAME OVER"
-    - Estadísticas del nivel (opcional)
-    - Opciones de continuar
-    
-    Opciones:
-    - REINTENTAR: Reiniciar mismo nivel
-    - MENÚ PRINCIPAL: Volver al menú
-    
-    Controles:
-    - Arriba/Abajo: Navegar
-    - Enter/Espacio: Seleccionar
-    - ESC: Volver al menú
-    
-    Atributos:
-    - selected_option: Opción seleccionada
-    - timer: Timer para auto-transición (opcional)
-    
-    Métodos principales:
-    - enter(): Reproduce música de game over
-    - handle_events(): Navegación y selección
-    - update(): Timer de auto-transición
-    - draw(): Renderiza pantalla de derrota
-    
-    Métodos privados:
-    - _select_option(): Ejecuta opción seleccionada
-
-VictoryState(State):
-    Pantalla de victoria.
-    
-    Hereda de: State
-    
-    Muestra:
-    - Mensaje "VICTORY!"
-    - Estadísticas del nivel
-    - Bonus por tiempo (futuro)
-    
-    Opciones:
-    - SIGUIENTE NIVEL: Cargar próximo nivel
-    - MENÚ PRINCIPAL: Volver al menú
-    
-    Controles:
-    - Enter/Espacio: Siguiente nivel
-    - ESC: Volver al menú
-    
-    Atributos:
-    - timer: Timer de animación
-    - stats: Estadísticas del nivel completado
-    
-    Métodos principales:
-    - enter(): Reproduce música de victoria
-    - handle_events(): Navegación
-    - update(): Animaciones
-    - draw(): Renderiza pantalla de victoria
-
-StateManager:
-    Gestor de estados (State Machine).
-    
-    No hereda de ninguna clase
-    Usada por: Game para controlar flujo del juego
-    
-    Responsabilidades:
-    - Mantiene referencia al estado actual
-    - Gestiona transiciones entre estados
-    - Delega eventos, update y draw al estado activo
-    
-    Atributos:
-    - game: Referencia al Game principal
-    - states: Dict de estados disponibles
-    - current_state: Estado actualmente activo
-    
-    Métodos principales:
-    - add_state(): Registra un nuevo estado
-    - change_state(): Cambia al estado especificado
-    - handle_events(): Delega eventos al estado actual
-    - update(): Delega update al estado actual
-    - draw(): Delega draw al estado actual
-    
-    Flujo de transición:
-    1. current_state.exit() (limpia estado anterior)
-    2. Cambia current_state
-    3. current_state.enter() (inicializa nuevo estado)
-
-Flujo típico del juego:
------------------------
-    MENU
-       (JUGAR)
-    PLAYER_SELECT
-       (selecciona 2)
-    PLAYING
-       (ESC)
-    PAUSED
-       (CONTINUAR)
-    PLAYING
-       (todos muertos)
-    GAMEOVER
-       (REINTENTAR)
-    PLAYING
-       (llegó a puerta)
-    VICTORY
-       (SIGUIENTE NIVEL)
-    PLAYING (nivel 2)
-
-Alternativa con dificultad:
-    MENU
-       (DIFICULTAD)
-    DIFFICULTY_SELECT
-       (selecciona DIFÍCIL)
-    MENU
-       (JUGAR)
-    PLAYER_SELECT
-      
-    PLAYING (con dificultad DIFÍCIL)
-
-Uso típico:
------------
+Uso Típico:
     # En Game.__init__
-    state_manager = StateManager(game)
-    
-    # Registrar estados
-    state_manager.add_state('MENU', MenuState(game))
-    state_manager.add_state('PLAYING', PlayingState(game))
-    # ... etc
-    
-    # Iniciar en menú
-    state_manager.change_state('MENU')
+    manager = StateManager(game)
+    manager.add_state('MENU', MenuState(game))
+    manager.change_state('MENU')
     
     # En game loop
-    state_manager.handle_events(events)
-    state_manager.update(dt)
-    state_manager.draw()
+    manager.handle_events(events)
+    manager.update(dt)
+    manager.draw()
 
-Ventajas del State Pattern:
-----------------------------
-1. Separación de responsabilidades
-2. Código más limpio y mantenible
-3. Fácil agregar nuevos estados
-4. Sin if/elif gigantes en game loop
-5. Cada estado es independiente y testeable
-
-Extensión futura:
------------------
-Nuevos estados que se pueden agregar fácilmente:
-- OptionsState: Configuración de audio, controles
-- CreditsState: Créditos del juego
-- LevelSelectState: Selección de nivel
-- ShopState: Tienda de powerups (entre niveles)
-- CutsceneState: Cinemáticas entre niveles
+Notas:
+    Los estados no deben mantener lógica de juego compleja. PlayingState
+    delega todo a GameLevelManager. Los otros estados son principalmente
+    UI y navegación.
 """
 
 
@@ -582,7 +288,19 @@ class MenuState(State):
 # PLAYING STATE
 
 class PlayingState(State):
-    """Estado de juego activo."""
+    """
+    Estado de gameplay activo con nivel en curso.
+    
+    Este estado delega toda la lógica del nivel a GameLevelManager.
+    Solo maneja pausa (ESC) y transiciones a GAMEOVER/VICTORY.
+    
+    Attributes:
+        level (GameLevelManager): Gestor del nivel actual. None antes de enter().
+    
+    Notas:
+        Al pausar, el nivel permanece en memoria y se resume al regresar.
+        Al llegar a GAMEOVER o VICTORY, el nivel se destruye en exit().
+    """
     
     def __init__(self, game):
         super().__init__(game)
@@ -1153,7 +871,21 @@ class PlayerSelectState(State):
 # STATE MANAGER (Opcional, para organización extra)
 
 class StateManager:
-    """Gestor de estados del juego."""
+    """
+    Gestor centralizado de transiciones entre estados.
+    
+    Mantiene referencia al estado actual y orquesta cambios llamando
+    automáticamente exit() del estado saliente y enter() del entrante.
+    Delega eventos y actualizaciones al estado activo.
+    
+    Attributes:
+        game: Referencia a Game.
+        current_state (State): Estado actualmente activo.
+    
+    Notas:
+        Los estados se registran con add_state() antes de poder
+        usarse en change_state(). El cambio es instantáneo (sin fade).
+    """
     
     def __init__(self, game):
         self.game = game

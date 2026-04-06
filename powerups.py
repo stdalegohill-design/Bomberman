@@ -1,189 +1,40 @@
 """
-POWERUPS.PY - Sistema de Power-ups y Efectos
-=============================================
+Sistema de powerups coleccionables del juego.
 
-Implementa todos los coleccionables y efectos especiales del juego:
-- Power-ups para jugadores (velocidad, rango, bombas, etc.)
-- Tiles especiales (nieve, charcos de agua)
-- Power-ups para enemigos (Globe los suelta)
-- Llaves para abrir la puerta
+Este módulo implementa todos los tipos de powerups que pueden aparecer
+al destruir ladrillos. Cada powerup otorga una mejora permanente o
+temporal al jugador que lo recoge.
 
-Jerarquía de clases:
-    Sin herencia - Clases independientes que heredan de pygame.sprite.Sprite
+Powerups Implementados:
+    - BombPowerup: +1 bomba máxima simultánea
+    - FlamePowerup: +1 rango de explosión
+    - SpeedPowerup: +20% velocidad de movimiento
+    - KickPowerup: Habilidad de patear bombas
+    - WallPassPowerup: Atravesar ladrillos (temporal)
+    - BombPassPowerup: Atravesar bombas (temporal)
+    - FlamePassPowerup: Inmunidad a explosiones (temporal)
+    - MysteryPowerup: Powerup aleatorio (cualquiera de los anteriores)
 
-Clases:
--------
+Clases Exportadas:
+    - Powerup: Clase base abstracta
+    - BombPowerup, FlamePowerup, SpeedPowerup: Mejoras permanentes
+    - KickPowerup: Habilidad de pateo
+    - WallPassPowerup, BombPassPowerup, FlamePassPowerup: Temporales
+    - MysteryPowerup: Powerup aleatorio
 
-PowerUp:
-    Power-up para jugadores que aparece al destruir bricks.
+Uso Típico:
+    # Spawn al destruir ladrillo
+    powerup = random.choice([
+        BombPowerup, FlamePowerup, SpeedPowerup
+    ])(pos=(x, y))
     
-    No hereda de ninguna clase (usa pygame.sprite.Sprite internamente)
-    Spawneado por: LevelManager al destruir bricks
-    
-    Tipos de power-up:
-    - 'bomb_range': Aumenta alcance de explosión (+1 celda)
-    - 'bomb_count': Permite colocar más bombas (+1)
-    - 'speed': Aumenta velocidad de movimiento
-    - 'remote': Control remoto de bombas
-    - 'bomb_push': Poder empujar bombas
-    - 'bomb_pass': Atravesar bombas propias
-    - 'kick': Patear bombas
-    - 'super_speed': Velocidad extra
-    - 'vest': Protección adicional
-    
-    Atributos principales:
-    - type: Tipo de power-up
-    - rect: Rectángulo de colisión
-    - image: Sprite del power-up
-    - float_offset: Offset de animación flotante
-    - collected: Si fue recogido
-    - info: Descripción del efecto
-    
-    Métodos principales:
-    - apply_effect(): Aplica efecto al jugador
-    - update(): Animación flotante
-    - draw(): Renderizado con efecto de flotación
-
-SnowTile:
-    Tile de nieve que ralentiza al jugador.
-    
-    No hereda de ninguna clase
-    Cáreada por: Enemigo Snow al moverse
-    
-    Efecto:
-    - Ralentiza jugadores que la pisan (50% velocidad)
-    - Duración limitada (desaparece con el tiempo)
-    - Se desvanece gradualmente (alpha decárease)
-    
-    Atributos principales:
-    - rect: Rectángulo de colisión
-    - lifetime: Duración total (segundos)
-    - timer: Tiempo restante
-    - slow_factor: Factor de ralentización (0.5 = 50% velocidad)
-    - alpha: Transparencia actual
-    - remove: Si debe ser eliminada
-    
-    Métodos principales:
-    - update(): Decrementa timer y alpha
-    - draw(): Renderiza con transparencia
-
-WaterPuddle:
-    Charco de agua que hace resbalar al jugador.
-    
-    No hereda de ninguna clase
-    Cáreada por: Enemigo Water al moverse
-    
-    Efecto:
-    - Hace resbalar a jugadores en dirección de movimiento
-    - Duración limitada (desaparece con el tiempo)
-    - Se desvanece gradualmente
-    
-    Atributos principales:
-    - rect: Rectángulo de colisión
-    - lifetime: Duración total
-    - timer: Tiempo restante
-    - alpha: Transparencia actual
-    - color: Color del charco (azul)
-    - remove: Si debe ser eliminada
-    
-    Métodos principales:
-    - update(): Decrementa timer y alpha
-    - draw(): Renderiza charco con transparencia
-
-EnemyPowerup:
-    Power-up para enemigos (soltado por Globe).
-    
-    No hereda de ninguna clase
-    Soltada por: Enemigo Globe mientras vuela
-    
-    Tipos para enemigos:
-    - 'health_boost': Restaura 1 vida al enemigo
-    - 'speed_boost': Aumenta velocidad temporalmente
-    - 'armor': Resistencia adicional
-    
-    Sistema de cooldown:
-    - Cada tipo tiene cooldown individual
-    - Límite de powerups activos por tipo
-    - Globe controla cuándo soltar cada tipo
-    
-    Atributos principales:
-    - type: Tipo de power-up para enemigo
-    - rect: Rectángulo de colisión
-    - color: Color según tipo
-    - collected: Si fue recogido por algún enemigo
-    - float_offset: Animación flotante
-    
-    Métodos principales:
-    - apply_to_enemy(): Aplica efecto al enemigo que lo recoge
-    - update(): Animación flotante
-    - draw(): Renderiza con color según tipo
-    - try_drop_powerup(): Sistema de probabilidad de drop
-
-Key:
-    Llave que abre la puerta al recogerla.
-    
-    No hereda de ninguna clase
-    Spawneada por: Enemigo Boss (Barrel especial) al morir
-    
-    Funcionamiento:
-    - Aparece cuando se mata al último enemigo requerido
-    - Al recogerla, abre la puerta del nivel
-    - Solo puede ser recogida por el jugador que la spawneó (owner)
-    
-    Atributos principales:
-    - rect: Rectángulo de colisión
-    - image: Sprite de la llave
-    - collected: Si fue recogida
-    - owner: Jugador que puede recogerla
-    - float_offset: Animación flotante
-    
-    Métodos principales:
-    - update(): Animación flotante
-    - draw(): Renderiza llave flotando
-
-FrozenPuddle:
-    Charco congelado (actualmente sin uso, reservado para expansión).
-    
-    No hereda de ninguna clase
-    Estado: Implementación futura
-    
-    Efecto planeado:
-    - Congelaría jugadores temporalmente
-    - Se derretiría con el tiempo
-
-Sistema de probabilidades:
---------------------------
-Configurado en PowerUpConfig (settings.py):
-- DROP_CHANCE: Probabilidad base de drop al romper brick
-- POWERUP_WEIGHTS: Peso relativo de cada tipo
-
-Animación flotante:
--------------------
-Todos los powerups usan animación senoidal:
-    float_offset = sin(time * float_speed) * amplitude
-
-Uso típico:
------------
-    # Cárear power-up
-    powerup = PowerUp('bomb_range', pos=(x, y))
-    
-    # Verificar colisión con jugador
+    # Recolección
     if player.rect.colliderect(powerup.rect):
-        powerup.apply_effect(player)
-    
-    # Actualizar y dibujar
-    powerup.update(dt)
-    powerup.draw(screen, camera)
-    
-    # Sistema de nieve (Snow enemy)
-    if should_cáreate_snow:
-        snow_tile = SnowTile(pos=(x, y))
-        snow_tiles.append(snow_tile)
-    
-    # Verificar si jugador pisa nieve
-    for tile in snow_tiles:
-        if player.rect.colliderect(tile.rect):
-            player.is_slowed = True
+        powerup.apply(player)
+
+Notas:
+    Los powerups desaparecen automáticamente después de 10 segundos
+    si no son recogidos. Los efectos temporales duran 15 segundos.
 """
 
 
@@ -252,7 +103,7 @@ class PowerUp:
     def _random_type(cls):
         """Elige tipo aleatorio según probabilidades de settings.py."""
         weighted_types = []
-        for ptype, prob in PowerUpConfig.PROBABILITIES.itemás():
+        for ptype, prob in PowerUpConfig.PROBABILITIES.items():
             if ptype in cls.TYPES:
                 weight = int(prob * 100)
                 weighted_types.extend([ptype] * weight)
