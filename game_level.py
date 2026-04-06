@@ -32,18 +32,18 @@ LevelManager:
     1. Inicializacin del nivel:
        - Genera mapa con Maze
        - Crea jugadores en spawns
-       - Spawna enemigos segn dificultad
-       - Configura cmara segn nmero de jugadores
+       - Spawn enemigos segun dificultad
+       - Configura camara segun numero de jugadores
        - Inicializa audio del nivel
     
-    2. Gestin de jugadores:
+    2. Gestion de jugadores:
        - Actualiza posicin y estado
        - Procesa input de controles
        - Maneja colisiones
        - Aplica efectos de tiles (nieve, charcos)
        - Gestiona bombas de cada jugador
     
-    3. Gestin de enemigos:
+    3. Gestion de enemigos:
        - Spawning inicial por tipo
        - Actualizacin de comportamiento IA
        - Deteccin de amenazas (bombas)
@@ -63,8 +63,8 @@ LevelManager:
        - Aplicacin de efectos
        - Gestin de tiles especiales (nieve, agua)
     
-    6. Sistema de cmara:
-       - Cmara simple (1 jugador)
+    6. Sistema de camara:
+       - Camara simple (1 jugador)
        - Split-screen diagonal (2 jugadores)
        - Seguimiento de jugadores
        - Renderizado con viewport correcto
@@ -617,158 +617,25 @@ class LevelManager:
             self.enemies.append(new_enemy)
 
     # ENEMIGOS Y BOMBAS DEL ROBOT
-    
+
     def _check_enemy_bomb_threats(self, robot_bombs, dt):
         """
-        Sistema inteligente: Enemigos escapan de bombas sin vibrar.
-        
-        Mejoras:
-        - Escape comprometido (no recalcular)
-        - Quedarse quieto al llegar a lugar seguro
-        - Usar habilidades especiales por tipo de enemigo
-        
-        Args:
-            robot_bombs: Lista de bombas activas de todos los Robots
-            dt: Delta time
+        Inyecta las bombas del Robot en cada enemigo para que EnemyBrain
+        las incluya junto a las bombas del jugador al evaluar peligros.
+
+        EnemyBrain ya gestiona toda la lógica de escape en brain_tick —
+        no necesitamos un sistema paralelo aquí. Solo hay que asegurarnos
+        de que cada enemigo tenga acceso a las robot_bombs cuando llama
+        a check_player_bomb_danger.
+
+        El atributo _extra_bombs se fusiona con player_bombs en brain_tick.
         """
-        if not robot_bombs:
-            return
-        
         for enemy in self.enemies:
             if enemy.enemy_type == 'Robot' or enemy.dead:
                 continue
-            
-            # Si ya está escapando, continuar con el plan
-            if enemy._escaping_bomb:
-                bomb = enemy._bomb_being_escaped
-                
-                # Verificar que la bomba sigue existiendo
-                if bomb in robot_bombs and not getattr(bomb, 'remove', True):
-                    # Usar escape inteligente
-                    is_escaping = enemy.smart_bomb_escape(
-                        bomb, 
-                        enemy._escape_target_cell, 
-                        self.maze, 
-                        dt
-                    )
-                    
-                    if is_escaping:
-                        # Marcar para que no haga nada más este frame
-                        enemy._skip_normal_update = True
-                        continue
-                else:
-                    # Bomba explotó o desapareció
-                    enemy._reset_escape_state()
-            
-            # No está escapando: Detectar nuevas amenazas
-            bomb_threat, escape_cell = enemy._nearby_bomb_danger(
-                robot_bombs, 
-                safety_radius_cells=4  # CORREGIDO: Nombre correcto
-            )
-            
-            if bomb_threat is not None and escape_cell is not None:
-                # ===== LÓGICA ESPECIAL POR TIPO DE ENEMIGO =====
-                
-                # Ghost: Puede atravesar muros con habilidad
-                if enemy.enemy_type == 'Ghost':
-                    escape_cell = self._ghost_smart_escape(enemy, bomb_threat, escape_cell)
-                
-                # Globe: Puede volar sobre obstáculos
-                elif enemy.enemy_type == 'Globe':
-                    escape_cell = self._globe_smart_escape(enemy, bomb_threat, escape_cell)
-                
-                # Bear: Si está olfateando, esperar
-                elif enemy.enemy_type == 'Bear':
-                    if getattr(enemy, 'is_sniffing', False):
-                        # Quedarse quieto hasta que termine de olfatear
-                        enemy.direction = (0, 0)
-                        continue
-                
-                # Iniciar escape inteligente
-                enemy.smart_bomb_escape(bomb_threat, escape_cell, self.maze, dt)
-                enemy._skip_normal_update = True
-    
-    def _ghost_smart_escape(self, ghost, bomb, default_escape_cell):
-        """
-        Ghost puede usar modo fantasma para atravesar muros.
-        
-        Returns:
-            (row, col): Mejor celda de escape usando habilidad
-        """
-        # Si modo fantasma está disponible
-        if ghost.ghost_cooldown_timer <= 0:
-            # Activar modo fantasma
-            ghost.activate_ghost_mode()
-            
-            # Buscar celda al otro lado del muro más cercano
-            cs = self.maze.cell_size
-            my_col = int(ghost.x // cs)
-            my_row = int(ghost.y // cs)
-            
-            # Intentar ir al lado opuesto de la bomba atravesando muro
-            bomb_col = int(bomb.x // cs)
-            bomb_row = int(bomb.y // cs)
-            
-            # Dirección opuesta a la bomba
-            if my_col < bomb_col:
-                target_col = my_col - 3  # Ir más a la izquierda
-            else:
-                target_col = my_col + 3  # Ir más a la derecha
-            
-            if my_row < bomb_row:
-                target_row = my_row - 3
-            else:
-                target_row = my_row + 3
-            
-            # Verificar límites
-            target_col = max(1, min(target_col, self.maze.cols - 2))
-            target_row = max(1, min(target_row, self.maze.rows - 2))
-            
-            return (target_row, target_col)
-        
-        # Modo fantasma no disponible, escape normal
-        return default_escape_cell
-    
-    def _globe_smart_escape(self, globe, bomb, default_escape_cell):
-        """
-        Globe puede volar sobre obstáculos.
-        
-        Returns:
-            (row, col): Mejor celda de escape usando vuelo
-        """
-        # Si puede volar
-        if globe.fly_timer <= 0 and not globe.is_flying:
-            # Activar vuelo
-            globe.is_flying = True
-            globe.fly_duration_timer = 0.0
-            globe.change_animation('flying')
-            
-            # Calcular celda ideal (puede ignorar muros)
-            cs = self.maze.cell_size
-            my_col = int(globe.x // cs)
-            my_row = int(globe.y // cs)
-            
-            bomb_col = int(bomb.x // cs)
-            bomb_row = int(bomb.y // cs)
-            
-            # Ir lejos de la bomba en diagonal
-            if my_col < bomb_col:
-                target_col = my_col - 4
-            else:
-                target_col = my_col + 4
-            
-            if my_row < bomb_row:
-                target_row = my_row - 4
-            else:
-                target_row = my_row + 4
-            
-            target_col = max(1, min(target_col, self.maze.cols - 2))
-            target_row = max(1, min(target_row, self.maze.rows - 2))
-            
-            return (target_row, target_col)
-        
-        return default_escape_cell
-    
+            # EnemyBrain fusiona _extra_bombs con player_bombs en brain_tick
+            enemy._extra_bombs = robot_bombs if robot_bombs else []
+ 
     # EVENTOS
     
     def handle_events(self, events):
@@ -873,34 +740,18 @@ class LevelManager:
 
         # Actualizar enemigos: cada uno elige el jugador vivo más cercano
         for enemy in self.enemies[:]:
-            # ===== SISTEMA INTELIGENTE: Skip si está escapando =====
-            if getattr(enemy, '_skip_normal_update', False):
-                # Ya se actualizó en _check_enemy_bomb_threats
-                enemy._skip_normal_update = False  # Reset para siguiente frame
-                
-                # Solo actualizar animación y muerte
-                enemy.update_death(dt)
-                enemy.animate(dt, moving=(enemy.direction != (0, 0)))
-                
-                # Aplicar movimiento físico
-                enemy.move(dt, self.maze)
-                continue
-            # ===== FIN SISTEMA INTELIGENTE =====
-            
             target = self._nearest_player_to(enemy)
             if target is None:
                 continue
-            enemy._maze_ref = self.maze   # necesario para _nearby_bomb_danger
+
+            # _maze_ref siempre actualizado antes del update (necesario para _nearby_bomb_danger)
+            enemy._maze_ref = self.maze
+
             if enemy.enemy_type == 'Snow':
                 enemy.update(dt, self.maze, target, self.snow_tiles)
             elif enemy.enemy_type == 'Bear':
                 enemy.update(dt, self.maze, target, robot_bombs=robot_bombs)
-            elif enemy.enemy_type == 'Robot':
-                enemy.update(dt, self.maze, target)   # gestiona su propia evasión
-            elif enemy.enemy_type == 'Water':
-                enemy.update(dt, self.maze, target)
             elif enemy.enemy_type == 'Globe':
-                # Pasar lista de enemigos para powerups
                 enemy.update(dt, self.maze, target, self.enemies)
             else:
                 enemy.update(dt, self.maze, target)
@@ -1638,7 +1489,7 @@ class LevelManager:
         from collections import Counter
         type_counts = Counter(enemy_types)
         print(f"Generando {len(enemy_types)} enemigos:")
-        for enemy_type, count in sorted(type_counts.itemás()):
+        for enemy_type, count in sorted(type_counts.items()):
             print(f"   {enemy_type.capitalize()}: {count}")
 
         for enemy_type in enemy_types:

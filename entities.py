@@ -1,96 +1,39 @@
 """
-ENTITIES.PY - Clases Base para Entidades
-=========================================
+Jerarquía de clases base para entidades del juego.
 
-Jerarquía de herencia:
-    AnimatedEntity (base pygame.sprite.Sprite)
-     MovableEntity
-         PathfindingEntity
-             LivingEntity
+Este módulo implementa la jerarquía OOP completa que elimina duplicación
+de código entre jugadores y enemigos. Cada nivel de herencia añade una
+capa de funcionalidad: animación, física, IA y sistema de vidas.
 
-Estas clases eliminan código repetitivo y proveen funcionalidad común
-para todos los personajes (jugadores y enemigos) del juego.
+La arquitectura sigue un diseño por composición de responsabilidades donde
+cada clase agrega exactamente una funcionalidad nueva sobre su padre.
 
-Clases:
---------
+Jerarquía Completa:
+    pygame.sprite.Sprite (Pygame base)
+        AnimatedEntity: Gestión de animaciones por frames
+            MovableEntity: Física y movimiento básico
+                PathfindingEntity: IA con A*, detección y evasión
+                    LivingEntity: Sistema de vidas, daño e invencibilidad
 
-AnimatedEntity(pygame.sprite.Sprite):
-    Clase base para cualquier entidad con animación.
-    
-    Hereda de: pygame.sprite.Sprite
-    Heredada por: MovableEntity, Bomb
-    
-    Atributos principales:
-    - animations: Dict de animaciones por estado
-    - current_animation: Lista de frames actual
-    - animation_frame: Frame actual de la animación
-    - animation_speed: Velocidad de cambio de frames
-    
-    Métodos principales:
-    - change_animation(): Cambia el estado de animación
-    - animate(): Actualiza el frame actual
+Clases Exportadas:
+    - AnimatedEntity: Base para cualquier sprite animado
+    - MovableEntity: Entidad con física y colisiones
+    - PathfindingEntity: Entidad con IA y navegación
+    - LivingEntity: Entidad completa con sistema de vida/muerte
 
-MovableEntity(AnimatedEntity):
-    Añade física básica: movimiento, velocidad y colisiones.
-    
-    Hereda de: AnimatedEntity
-    Heredada por: PathfindingEntity
-    
-    Atributos principales:
-    - x, y: Posición en píxeles
-    - width, height: Dimensiones
-    - speed: Velocidad de movimiento
-    - direction: Dirección actual (dx, dy)
-    
-    Métodos principales:
-    - move(): Aplica movimiento con detección de colisiones
-    - random_walk(): Movimiento aleatorio
+Clases que Heredan de LivingEntity:
+    - PlayerBomberman: Jugador controlado por teclado
+    - Ghost, Snow, Bear, Robot, Water, Globe: Enemigos con IA
+    - Barrel: Enemigo estático destructible
 
-PathfindingEntity(MovableEntity):
-    Añade IA: pathfinding A*, detección de jugador, evasión de bombas.
-    
-    Hereda de: MovableEntity
-    Heredada por: LivingEntity
-    
-    Atributos principales:
-    - detection_range: Rango de detección del jugador
-    - path: Camino A* calculado hacia objetivo
-    - escaping_bomb: Estado de huida de bomba
-    - in_wait_state: Estado de espera después de huir
-    
-    Métodos principales:
-    - find_path(): Calcula ruta A* hacia objetivo
-    - follow_player(): Persigue al jugador
-    - check_player_bomb_danger(): Detecta bombas peligrosas
-    - smart_bomb_escape(): Huye de bombas con anti-vibración
-    - update_wait_state(): Maneja estado de espera post-huida
-
-LivingEntity(PathfindingEntity):
-    Añade sistema de vidas: daño, muerte, invencibilidad, stun.
-    
-    Hereda de: PathfindingEntity
-    Heredada por: PlayerBomberman, Ghost, Snow, Bear, Robot, Water, Globe, Barrel
-    
-    Atributos principales:
-    - lives: Vidas actuales
-    - max_lives: Vidas máximas
-    - dead: Estado de muerte
-    - invincibility_timer: Temporizador de invencibilidad
-    - is_stunned: Estado de aturdimiento por bomba
-    
-    Métodos principales:
-    - take_damage(): Recibe daño y maneja invencibilidad
-    - die(): Ejecuta muerte (animación y lógica)
-    - stun(): Aturde temporalmente
-    - is_stunned(): Verifica si está aturdido
-    - update_death(): Actualiza animación de muerte
-
-Uso típico:
------------
-    # Cárear un nuevo enemigo
+Uso Típico:
+    # Crear nuevo tipo de enemigo
     class NewEnemy(LivingEntity):
         def __init__(self, pos):
-            animations = load_animations_from_dict({...})
+            animations = load_animations_from_dict({
+                'idle': ['enemy_1.png', 'enemy_2.png'],
+                'dead': ['enemy_dead.png']
+            })
             super().__init__(
                 pos=pos,
                 width=32, height=32,
@@ -100,12 +43,16 @@ Uso típico:
                 detection_range=5
             )
         
-        def update(self, dt, maze, player):
-            # Lógica específica del enemigo
-            distance = math.hypot(player.x - self.x, player.y - self.y)
-            if distance < self.detection_range * maze.cell_size:
-                self.follow_player(maze, player, dt)
-            self.move(dt, maze)
+        def update(self, dt, maze, target):
+            if not self.dead:
+                self.follow_player(target, maze)
+            super().update(dt)
+
+Notas de Implementación:
+    - PathfindingEntity usa A* con heurística Manhattan
+    - El sistema de evasión incluye anti-vibración (estado WAIT)
+    - La invencibilidad usa i-frames con efecto de parpadeo
+    - Todas las entidades usan el mismo sistema de colisión del maze
 """
 
 
@@ -266,17 +213,42 @@ class MovableEntity(AnimatedEntity):
             # Si chocó con bomba, marcar para buscar ruta alternativa
             if bomb_collision:
                 self._blocked_by_obstacle = True
-            
-            # Alinear al grid si choca
-            if self.direction[0] > 0:
-                self.x = (next_x // maze.cell_size) * maze.cell_size
-            elif self.direction[0] < 0:
-                self.x = ((next_x // maze.cell_size) + 1) * maze.cell_size
 
-            if self.direction[1] > 0:
-                self.y = (next_y // maze.cell_size) * maze.cell_size
-            elif self.direction[1] < 0:
-                self.y = ((next_y // maze.cell_size) + 1) * maze.cell_size
+                # Desencierro: si todas las direcciones están bloqueadas por bombas
+                # (no por muros), teleportar a la última posición libre conocida.
+                # Esto resuelve el caso donde una bomba se coloca encima del enemigo.
+                if hasattr(self, '_last_safe_pos'):
+                    all_blocked = True
+                    for test_dx, test_dy in [(1,0),(-1,0),(0,1),(0,-1)]:
+                        test_rect = pygame.Rect(
+                            self.x + test_dx * maze.cell_size,
+                            self.y + test_dy * maze.cell_size,
+                            self.width, self.height
+                        )
+                        if (not maze.check_collision_with_blocks(test_rect)
+                                and not self._check_bomb_collision(test_rect)):
+                            all_blocked = False
+                            break
+                    if all_blocked:
+                        # Teleportar a posición segura anterior
+                        self.x, self.y = self._last_safe_pos
+                        self.rect.topleft = (self.x, self.y)
+                        self.pos = (self.x, self.y)
+                        return False
+
+            # Alinear al grid en el eje de movimiento.
+            # Usamos int() antes de // para evitar errores de punto flotante
+            # que dejan al enemigo 1-2px dentro del bloque (causa vibración).
+            cs = maze.cell_size
+            if self.direction[0] > 0:   # yendo a la derecha → borde izquierdo del bloque
+                self.x = (int(next_x) // cs) * cs
+            elif self.direction[0] < 0: # yendo a la izquierda → borde derecho del bloque
+                self.x = (int(next_x) // cs + 1) * cs
+
+            if self.direction[1] > 0:   # yendo hacia abajo → borde superior del bloque
+                self.y = (int(next_y) // cs) * cs
+            elif self.direction[1] < 0: # yendo hacia arriba → borde inferior del bloque
+                self.y = (int(next_y) // cs + 1) * cs
 
             # NO reseteamos direction aquí: follow_player la áreasigna cada frame.
             # Si reseteamos, el enemigo queda quieto 1 frame entre cada celda
@@ -285,42 +257,36 @@ class MovableEntity(AnimatedEntity):
             self.pos = (self.x, self.y)
             return True  # Hubo colisión
         else:
-            # Movimiento libre
-            self._blocked_by_bomb = False  # Resetear flag
+            # Movimiento libre — actualizar última posición segura
+            self._blocked_by_bomb = False
             self.x = next_x
             self.y = next_y
             self.rect.topleft = (self.x, self.y)
             self.pos = (self.x, self.y)
+            if hasattr(self, '_last_safe_pos'):
+                self._last_safe_pos = (self.x, self.y)
             return False
     
     def _check_bomb_collision(self, entity_rect):
         """
         Verifica si el enemigo colisionaría con bombas sólidas.
-        
-        NUEVO: Enemigos respetan bombas como obstáculos
-        
-        Args:
-            entity_rect: Rectángulo del enemigo en próxima posición
-        
-        Returns:
-            bool: True si hay colisión con bomba sólida
+        Ignora las bombas propias del enemigo (ej: bombas del Robot)
+        para que pueda alejarse después de colocarlas.
         """
-        # Obtener lista de bombas si está disponible (asignada por game_level)
         all_bombs = getattr(self, '_all_bombs', [])
-        
+        own_bombs = set(getattr(self, 'bombs', []))  # bombas propias a ignorar
+
         for bomb in all_bombs:
-            # Solo colisionar con bombas sólidas
+            if bomb in own_bombs:
+                continue   # ignorar propias — igual que el jugador ignora las suyas
             if not bomb.is_solid:
                 continue
-            
-            # Ignorar bombas que ya explotaron
             if bomb.exploded:
                 continue
-            
             bomb_rect = pygame.Rect(bomb.x, bomb.y, bomb.width, bomb.height)
             if entity_rect.colliderect(bomb_rect):
                 return True
-        
+
         return False
     
     def random_walk(self, dt):
@@ -418,9 +384,9 @@ class PathfindingEntity(MovableEntity):
         # Estado WAIT para prevenir vibración (Bug #2)
         self._in_wait_state = False
         self._wait_timer = 0.0
-        self._wait_duration = 2.0
+        self._wait_duration = 0.5          # breve pausa de estabilización post-escape
         self._escape_cooldown = 0.0
-        self._escape_cooldown_duration = 1.5
+        self._escape_cooldown_duration = 0.5  # tiempo mínimo antes de detectar otra bomba
         
         # Random walk mejorado
         self._walk_timer = 0.0
@@ -497,164 +463,262 @@ class PathfindingEntity(MovableEntity):
         
         path.reverse()
         return path
-    
+
+    def _path_distance(self, maze, start_cell, goal_cell, ignore_bricks=False):
+        """
+        Retorna la distancia en celdas del camino A* entre start y goal.
+        Si no hay camino (completamente bloqueado), retorna float('inf').
+        Usa el mismo A* que find_path para ser 100% consistente.
+        """
+        path = self.find_path(maze, start_cell, goal_cell, ignore_bricks)
+        return len(path) if path else float('inf')
+
     def _nearby_bomb_danger(self, all_bombs, safety_radius_cells=4):
         """
-        Detecta si alguna bomba activa (de Robot o de jugador) supone
-        peligro inminente para esta entidad.
+        Detecta si alguna bomba activa supone peligro inminente y calcula
+        la celda de escape más segura Y alcanzable por A*.
 
-        Usado por TODOS los enemigos (Ghost, Snow, Bear, Barrel, Robot)
-        porque está en la clase padre PathfindingEntity.
+        Condiciones de peligro:
+        A) Misma fila, dentro del rango, sin muro bloqueante.
+        B) Misma columna, dentro del rango, sin muro bloqueante.
+        C) Distancia Manhattan ≤ brange (pánico por proximidad: esquinas, entradas).
 
-        Args:
-            all_bombs           : iterable de objetos Bomb
-            safety_radius_cells : radio en celdas considerado peligroso
+        La celda de escape elegida garantiza que existe un path A* real,
+        previniendo que el enemigo se congele al intentar llegar a una
+        celda inaccesible a través de muros.
 
         Returns:
             (Bomb, (escape_row, escape_col))  si hay peligro
             (None, None)                       si está seguro
         """
-        cs = CELL_SIZE
-        my_col = int(self.x // cs)
-        my_row = int(self.y // cs)
+        cs     = CELL_SIZE
+        my_col = int((self.x + self.width  // 2) // cs)
+        my_row = int((self.y + self.height // 2) // cs)
+        maze   = self._maze_ref
 
         for bomb in all_bombs:
             if getattr(bomb, 'remove', False):
                 continue
-            # Peligrosa si: ya explotó O le quedan < 1.8 s de mecha
-            is_dangerous = (
-                getattr(bomb, 'exploded', False) or
-                (not getattr(bomb, 'exploded', False) and
-                 getattr(bomb, 'timer', 999) < 1.8)
-            )
-            if not is_dangerous:
-                continue
-
-            dist = abs(bomb.x - self.x) + abs(bomb.y - self.y)
-            if dist > safety_radius_cells * cs:
+            if getattr(bomb, 'exploded', False):
                 continue
 
             bomb_col = int(bomb.x // cs)
             bomb_row = int(bomb.y // cs)
-            maze = self._maze_ref
+            brange   = getattr(bomb, 'explosion_range', 2)
 
-            # Candidatos: vecinos libres, ordenados de más lejos a más cerca de la bomba
-            candidates = []
-            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                er, ec = my_row + dr, my_col + dc
-                if maze is not None:
-                    if not (0 < er < maze.rows - 1 and 0 < ec < maze.cols - 1):
-                        continue
-                    if maze.grid[er][ec] in ('ironbrick', 'brick'):
-                        continue
-                dist_from_bomb = abs(er - bomb_row) + abs(ec - bomb_col)
-                candidates.append((dist_from_bomb, (er, ec)))
+            # ── Condiciones de peligro ───────────────────────────────────────
+            in_blast_row = (my_row == bomb_row and abs(my_col - bomb_col) <= brange)
+            in_blast_col = (my_col == bomb_col and abs(my_row - bomb_row) <= brange)
+            near_center  = (abs(my_row - bomb_row) + abs(my_col - bomb_col)) <= max(1, brange - 1)
 
+            in_danger = False
+            if in_blast_row or in_blast_col:
+                if not (maze and self._wall_blocks_explosion(
+                        my_row, my_col, bomb_row, bomb_col, maze)):
+                    in_danger = True
+            elif near_center:
+                in_danger = True
+
+            if not in_danger:
+                continue
+
+            # ── Recopilar candidatos de escape ───────────────────────────────
+            search_r  = brange + 2
+            candidates = []   # (dist_from_bomb, (er, ec))
+
+            for dr in range(-search_r, search_r + 1):
+                for dc in range(-search_r, search_r + 1):
+                    er, ec = my_row + dr, my_col + dc
+                    if maze is not None:
+                        if not (0 < er < maze.rows - 1 and 0 < ec < maze.cols - 1):
+                            continue
+                        if maze.grid[er][ec] in ('ironbrick', 'brick'):
+                            continue
+
+                    # Descartar celdas en línea de fuego sin muro protector
+                    cand_in_row = (er == bomb_row and abs(ec - bomb_col) <= brange)
+                    cand_in_col = (ec == bomb_col and abs(er - bomb_row) <= brange)
+                    if cand_in_row or cand_in_col:
+                        if not (maze and self._wall_blocks_explosion(
+                                er, ec, bomb_row, bomb_col, maze)):
+                            continue   # en blast sin protección — no válida
+
+                    dist_from_bomb = abs(er - bomb_row) + abs(ec - bomb_col)
+                    candidates.append((dist_from_bomb, (er, ec)))
+
+            if not candidates:
+                continue
+
+            # Ordenar de más a menos alejado de la bomba
+            candidates.sort(reverse=True)
+
+            # Verificar alcanzabilidad A* para los mejores candidatos.
+            # Solo comprobamos los top N para no hundir el rendimiento.
+            MAX_VERIFY = 6
+            for dist_val, cell in candidates[:MAX_VERIFY]:
+                if maze is None:
+                    return bomb, cell   # sin maze: confiar en Manhattan
+                path = self.find_path(maze, (my_row, my_col), cell)
+                if path:
+                    return bomb, cell   # encontrado: alcanzable
+
+            # Ninguno de los top-N tiene path — devolver el más lejano sin
+            # verificar (el enemigo al menos se moverá en alguna dirección).
             if candidates:
-                candidates.sort(reverse=True)
                 return bomb, candidates[0][1]
 
         return None, None
     
     def smart_bomb_escape(self, bomb, escape_cell, maze, dt):
         """
-        Escape inteligente de bombas - versión anti-vibración.
-        
-        Lógica:
-        1. Primera vez: Calcular celda de escape y comprometerse
-        2. Moverse hacia esa celda (sin recalcular)
-        3. Al llegar: Quedarse quieto hasta que explote
-        4. Si la bomba explota: Resetear estado
-        
-        Args:
-            bomb: Bomba peligrosa
-            escape_cell: Celda de escape calculada (row, col)
-            maze: Mapa
-            dt: Delta time
-        
+        Escape inteligente de bombas.
+
+        1. Primera vez: registrar celda de escape y comprometerse.
+        2. Moverse hacia esa celda usando A* (no solo un paso).
+        3. Al llegar: verificar seguridad.
+           - Segura  → quedarse quieto hasta que la bomba explote/desaparezca.
+           - No segura → buscar una celda más lejana y continuar.
+        4. Bomba explotó/desapareció → resetear estado.
+
         Returns:
-            bool: True si está manejando el escape (no hacer nada más)
+            bool: True si está manejando el escape (no hacer nada más).
         """
-        cs = maze.cell_size
-        my_col = int(self.x // cs)
-        my_row = int(self.y // cs)
-        
+        cs     = maze.cell_size
+        cx     = self.x + self.width  // 2
+        cy     = self.y + self.height // 2
+        my_col = int(cx // cs)
+        my_row = int(cy // cs)
+
         # Primera vez escapando de esta bomba
         if not self._escaping_bomb:
-            self._escaping_bomb = True
+            self._escaping_bomb      = True
             self._escape_target_cell = escape_cell
-            self._escape_committed = True
-            self._safe_from_bomb = False
+            self._safe_from_bomb     = False
             self._bomb_being_escaped = bomb
-        
-        # Verificar si la bomba ya explotó o desapareció
-        if getattr(bomb, 'remove', True) or getattr(bomb, 'exploded', False):
+
+        # Bomba desapareció o explotó → terminar escape
+        if getattr(bomb, 'remove', False) or getattr(bomb, 'exploded', False):
             self._reset_escape_state()
             return False
-        
-        # Si ya llegamos a la celda de escape
-        if (my_row, my_col) == self._escape_target_cell:
-            # Bug #2 fix: hacer snap exacto al centro de celda para evitar
-            # micro-oscilaciones provocadas por decimales residuales de posicion.
-            target_row, target_col = self._escape_target_cell
-            snap_x = target_col * cs
-            snap_y = target_row * cs
-            if abs(self.x - snap_x) < self.speed * 0.05:
-                self.x = snap_x
-            if abs(self.y - snap_y) < self.speed * 0.05:
-                self.y = snap_y
-            self.rect.topleft = (self.x, self.y)
 
+        # Ya llegamos y estamos seguros: quietos
+        if self._safe_from_bomb:
+            self.direction = (0, 0)
+            return True
+
+        # Llegamos a la celda comprometida — verificar si es segura
+        if (my_row, my_col) == self._escape_target_cell:
             if self._is_safe_from_explosion(bomb, maze):
                 self._safe_from_bomb = True
                 self.direction = (0, 0)
                 return True
+            else:
+                # Celda no segura (rango de bomba grande).
+                # Buscar la celda más alejada posible usando A*
+                # para asegurarnos de que sea alcanzable.
+                bomb_col = int(bomb.x // cs)
+                bomb_row = int(bomb.y // cs)
+                brange   = getattr(bomb, 'explosion_range', 2)
+                search_r = brange + 3
 
-        # Si ya estamos a salvo, solo esperar
-        if self._safe_from_bomb:
-            self.direction = (0, 0)
-            return True
-        
-        # Moverse hacia la celda de escape (sin recalcular)
-        self._move_toward_cell(self._escape_target_cell, maze, dt)
+                best_cell = None
+                best_dist = -1
+                for dr in range(-search_r, search_r + 1):
+                    for dc in range(-search_r, search_r + 1):
+                        er, ec = my_row + dr, my_col + dc
+                        if not (0 < er < maze.rows-1 and 0 < ec < maze.cols-1):
+                            continue
+                        if maze.grid[er][ec] in ('ironbrick', 'brick'):
+                            continue
+                        if (er, ec) == (my_row, my_col):
+                            continue
+                        # Verificar que sea genuinamente segura
+                        in_br = (er == bomb_row and abs(ec - bomb_col) <= brange)
+                        in_bc = (ec == bomb_col and abs(er - bomb_row) <= brange)
+                        if in_br or in_bc:
+                            if not self._wall_blocks_explosion(
+                                    er, ec, bomb_row, bomb_col, maze):
+                                continue
+                        # Verificar que hay camino real
+                        path = self.find_path(maze, (my_row, my_col), (er, ec))
+                        if not path:
+                            continue
+                        d = abs(er - bomb_row) + abs(ec - bomb_col)
+                        if d > best_dist:
+                            best_dist = d
+                            best_cell = (er, ec)
+
+                if best_cell:
+                    self._escape_target_cell = best_cell
+                else:
+                    # Sin alternativa alcanzable: aceptar posición actual
+                    self._safe_from_bomb = True
+                    self.direction = (0, 0)
+                    return True
+
+        # Moverse hacia la celda de escape usando A*
+        target_row, target_col = self._escape_target_cell
+        path = self.find_path(maze, (my_row, my_col), (target_row, target_col))
+        if path:
+            next_step = path[0]
+            if next_step == (my_row, my_col) and len(path) > 1:
+                next_step = path[1]
+            self._move_toward_cell(next_step, maze, dt)
+        else:
+            # Sin path al target: buscar cualquier celda adyacente libre
+            # que se aleje de la bomba en vez de congelarse.
+            bomb_col = int(getattr(self._bomb_being_escaped, 'x', 0) // cs)
+            bomb_row = int(getattr(self._bomb_being_escaped, 'y', 0) // cs)
+            best_adj = None
+            best_adj_dist = -1
+            for dr, dc in [(-1,0),(1,0),(0,-1),(0,1)]:
+                ar, ac = my_row+dr, my_col+dc
+                if maze and not (0 < ar < maze.rows-1 and 0 < ac < maze.cols-1):
+                    continue
+                if maze and maze.grid[ar][ac] in ('ironbrick','brick'):
+                    continue
+                d = abs(ar - bomb_row) + abs(ac - bomb_col)
+                if d > best_adj_dist:
+                    best_adj_dist = d
+                    best_adj = (ar, ac)
+            if best_adj:
+                self._escape_target_cell = best_adj
+                self._move_toward_cell(best_adj, maze, dt)
+            else:
+                # Completamente rodeado: quieto (no hay opción)
+                self._safe_from_bomb = True
+                self.direction = (0, 0)
+
         return True
     
     def _is_safe_from_explosion(self, bomb, maze):
         """
-        Verifica si la posición actual está a salvo de la explosión.
-        
-        Args:
-            bomb: Bomba a verificar
-            maze: Mapa
-        
-        Returns:
-            bool: True si está fuera del rango de explosión
+        Verifica si la posición actual está fuera del alcance de la explosión.
+        Usa el centro del sprite para ser consistente con el resto del sistema.
         """
         cs = maze.cell_size
-        my_col = int(self.x // cs)
-        my_row = int(self.y // cs)
-        
-        bomb_col = int(bomb.x // cs)
-        bomb_row = int(bomb.y // cs)
-        
-        bomb_range = getattr(bomb, 'explosion_range', 2)
+        my_col = int((self.x + self.width  // 2) // cs)
+        my_row = int((self.y + self.height // 2) // cs)
+
+        bomb_col  = int(bomb.x // cs)
+        bomb_row  = int(bomb.y // cs)
+        brange    = getattr(bomb, 'explosion_range', 2)
         
         # Misma fila/columna = peligro si está en rango
         if my_row == bomb_row:
             dist = abs(my_col - bomb_col)
-            if dist <= bomb_range:
-                # Verificar si hay muro entre nosotros
+            if dist <= brange:
                 if self._wall_blocks_explosion(my_row, my_col, bomb_row, bomb_col, maze):
                     return True
                 return False
-        
+
         if my_col == bomb_col:
             dist = abs(my_row - bomb_row)
-            if dist <= bomb_range:
+            if dist <= brange:
                 if self._wall_blocks_explosion(my_row, my_col, bomb_row, bomb_col, maze):
                     return True
                 return False
-        
+
         # Diferente fila y columna = seguro
         return True
     
@@ -689,69 +753,113 @@ class PathfindingEntity(MovableEntity):
         return False
     
     def _reset_escape_state(self):
-        """Resetea el estado de escape y entra en WAIT."""
-        self._escaping_bomb = False
+        """Resetea el estado de escape y entra en WAIT breve."""
+        self._escaping_bomb      = False
         self._escape_target_cell = None
-        self._escape_committed = False
-        self._safe_from_bomb = False
+        self._escape_committed   = False
+        self._safe_from_bomb     = False
         self._bomb_being_escaped = None
-        
-        self._in_wait_state = True
-        self._wait_timer = self._wait_duration
+        self._bomb_perception_timer = 0.0
+        self._bomb_perceived        = False
+        self._danger_cache          = (None, None)
+        self._danger_cache_timer    = 0.0
+        self._in_wait_state   = True
+        self._wait_timer      = self._wait_duration
         self._escape_cooldown = self._escape_cooldown_duration
 
     def update_wait_state(self, dt):
-        """Actualiza el estado WAIT (espera después de escapar)."""
+        """
+        Actualiza el estado WAIT (espera breve después de escapar de una bomba).
+        Durante este estado el enemigo se queda quieto — no camina aleatoriamente,
+        lo que podría llevarlo de vuelta al radio de explosión.
+        """
         if self._escape_cooldown > 0:
             self._escape_cooldown -= dt
-        
+
         if not self._in_wait_state:
             return False
-        
+
         self._wait_timer -= dt
-        
+
         if self._wait_timer > 0:
-            import random
-            if random.random() < 0.2:
-                self.random_walk(dt)
-            else:
-                self.direction = (0, 0)
+            self.direction = (0, 0)   # quieto siempre durante WAIT
             return True
-        
+
         self._in_wait_state = False
-        self._wait_timer = 0.0
+        self._wait_timer    = 0.0
         return False
 
     def _move_toward_cell(self, target_cell, maze, dt):
         """
-        Mueve la entidad un paso hacia la celda objetivo (row, col).
-        Lógica extraída de follow_player para reutilizar en evasión de bombas.
-        """
-        cs = maze.cell_size
-        my_cell = (int(self.y // cs), int(self.x // cs))
-        next_row, next_col = target_cell
+        Mueve la entidad hacia el centro de target_cell (row, col).
 
+        Todo se calcula desde el CENTRO del sprite (cx/cy), no desde la
+        esquina superior-izquierda. Esto evita que el cálculo de dirección
+        cambie antes de que el sprite haya cruzado visualmente la celda.
+
+        Llegada:
+        - Si la distancia al centro de destino es < ARRIVE_THRESHOLD px,
+          hace snap directo y pone direction=(0,0).  El frame siguiente,
+          follow_player recalcula el path desde la celda correcta y avanza
+          al próximo paso sin micro-pausa ni oscilación.
+
+        Corrección perpendicular:
+        - Mientras se mueve en X, alinea Y al centro de la fila actual.
+        - Mientras se mueve en Y, alinea X al centro de la columna actual.
+        - Snap inmediato si el desajuste perpendicular es ≤ 1 px.
+        """
+        ARRIVE_THRESHOLD = 3.0   # px — distancia para considerar celda alcanzada
+
+        cs  = maze.cell_size
+        # Centro del sprite
+        cx  = self.x + self.width  // 2
+        cy  = self.y + self.height // 2
+
+        next_row, next_col = target_cell
+        # Centro de la celda destino
         target_cx = next_col * cs + cs // 2
         target_cy = next_row * cs + cs // 2
 
-        dx = target_cx - (self.x + self.width  // 2)
-        dy = target_cy - (self.y + self.height // 2)
+        dx = target_cx - cx
+        dy = target_cy - cy
 
+        # ── Llegada: snap y detener ──────────────────────────────────────────
+        if abs(dx) < ARRIVE_THRESHOLD and abs(dy) < ARRIVE_THRESHOLD:
+            # Posicionar el sprite exactamente en el centro de la celda
+            self.x = target_cx - self.width  // 2
+            self.y = target_cy - self.height // 2
+            self.direction = (0, 0)
+            return
+
+        # ── Movimiento principal + corrección perpendicular ──────────────────
         if abs(dx) >= abs(dy):
+            # Eje principal: X
             self.direction = (1 if dx > 0 else -1, 0)
             self.change_animation('right' if dx > 0 else 'left')
-            row_center_y = my_cell[0] * cs + cs // 2 - self.height // 2
-            diff_y = row_center_y - self.y
-            if abs(diff_y) > 0.5:
-                step = min(abs(diff_y), self.speed * dt * 0.5)
+
+            # Corrección perpendicular: centrar en la fila actual
+            # Usamos la fila calculada desde el CENTRO del sprite
+            my_row       = int(cy // cs)
+            row_center_y = my_row * cs + cs // 2 - self.height // 2
+            diff_y       = row_center_y - self.y
+            if abs(diff_y) <= 1.0:
+                self.y = row_center_y
+            elif abs(diff_y) > 0.5:
+                step   = min(abs(diff_y), self.speed * dt * 0.5)
                 self.y += step if diff_y > 0 else -step
         else:
+            # Eje principal: Y
             self.direction = (0, 1 if dy > 0 else -1)
             self.change_animation('down' if dy > 0 else 'up')
-            col_center_x = my_cell[1] * cs + cs // 2 - self.width // 2
-            diff_x = col_center_x - self.x
-            if abs(diff_x) > 0.5:
-                step = min(abs(diff_x), self.speed * dt * 0.5)
+
+            # Corrección perpendicular: centrar en la columna actual
+            my_col       = int(cx // cs)
+            col_center_x = my_col * cs + cs // 2 - self.width // 2
+            diff_x       = col_center_x - self.x
+            if abs(diff_x) <= 1.0:
+                self.x = col_center_x
+            elif abs(diff_x) > 0.5:
+                step   = min(abs(diff_x), self.speed * dt * 0.5)
                 self.x += step if diff_x > 0 else -step
 
     def follow_player(self, maze, player, dt, ignore_bricks=False,
@@ -776,7 +884,11 @@ class PathfindingEntity(MovableEntity):
             return
 
         cs = maze.cell_size
-        my_cell = (int(self.y // cs), int(self.x // cs))
+        # Calcular la celda desde el CENTRO del sprite para que coincida
+        # con _move_toward_cell y no haya cambios de celda prematuros.
+        cx = self.x + self.width  // 2
+        cy = self.y + self.height // 2
+        my_cell = (int(cy // cs), int(cx // cs))
 
         #  Evasión de bombas peligrosas 
         if robot_bombs:
@@ -838,17 +950,13 @@ class PathfindingEntity(MovableEntity):
 
         # OPTIMIZACIÓN: Usar caché si está disponible y vigente
         self._path_cache_timer += dt
-        
-        # Recalcular solo si:
-        # - No hay caché
-        # - El objetivo cambió
-        # - Ha pasado suficiente tiempo
+
         needs_recalc = (
             self._path_cache is None or
             self._path_cache_goal != player_cell or
             self._path_cache_timer >= self._path_cache_duration
         )
-        
+
         if needs_recalc:
             path = self.find_path(maze, my_cell, player_cell, ignore_bricks)
             self._path_cache = path
@@ -857,10 +965,18 @@ class PathfindingEntity(MovableEntity):
         else:
             path = self._path_cache
 
-        if path:
-            self._move_toward_cell(path[0], maze, dt)
-        else:
+        # Detección basada en distancia de camino real (no Euclidiana).
+        # Si el path supera detection_range celdas, el enemigo no "ve" al jugador
+        # aunque esté cerca en línea recta pero separado por muros.
+        if not path or len(path) > self.detection_range:
             self.random_walk(dt)
+            return
+
+        # Avanzar al siguiente paso del path
+        next_step = path[0]
+        if next_step == my_cell and len(path) > 1:
+            next_step = path[1]
+        self._move_toward_cell(next_step, maze, dt)
 
 
 # CLASE BASE: ENTIDAD CON VIDA
@@ -913,7 +1029,7 @@ class LivingEntity(PathfindingEntity):
         self._bomb_perception_timer = 0.0   # acumulador: tiempo viendo la bomba cercana
         self._bomb_perceived        = False  # ya la percibio -> puede escapar
         self._exclamation_timer     = 0.0   # muestra '!' sobre la cabeza al percibir
-        self._bomb_áreaction_time    = 1.5   # override en __init__ de cada subclase
+        self._bomb_reaction_time     = 1.5   # override en __init__ de cada subclase
 
         # Powerup activo: None | 'speed_boost' | 'health_boost' | 'armor'
         self.active_powerup      = None
@@ -981,52 +1097,63 @@ class LivingEntity(PathfindingEntity):
         if self._exclamation_timer > 0:
             self._exclamation_timer -= dt
     
-    def check_player_bomb_danger(self, player_bombs, maze, dt):
+    def check_player_bomb_danger(self, player_bombs, maze, dt, instant=False):
         """
-        Detecta si hay una bomba del jugador peligrosa cerca, con retraso de percepcion.
+        Detecta si hay una bomba peligrosa cerca, con retraso de percepcion.
 
-        - Acumula _bomb_perception_timer mientras haya bomba en rango.
-        - Al superar _bomb_áreaction_time dispara el escape y muestra '!'.
-        - Si la bomba desaparece antes de ser percibida, resetea el timer.
+        Incluye caché de 0.15s para evitar recalcular A* cada frame cuando
+        hay muchas bombas en pantalla (previene congelamiento con múltiples Robots).
+
+        - Si instant=True (ej: Robot), retorna la amenaza inmediatamente.
+        - Si instant=False, acumula _bomb_perception_timer hasta reaction_time.
 
         Returns:
             (Bomb, escape_cell) si debe escapar ahora, (None, None) si no.
         """
-        
         if self._in_wait_state or self._escape_cooldown > 0:
             self._bomb_perception_timer = 0.0
             self._bomb_perceived = False
+            self._danger_cache   = (None, None)
             return None, None
-        
+
         if self.dead or self.is_stunned:
             self._bomb_perception_timer = 0.0
             self._bomb_perceived        = False
+            self._danger_cache          = (None, None)
             return None, None
 
-        # Buscar bomba peligrosa cercana (usa el metodo heredado de PathfindingEntity)
-        bomb_tháreat, escape_cell = self._nearby_bomb_danger(
-            player_bombs, safety_radius_cells=4
-        )
+        # ── Caché de detección (evita A* costoso cada frame) ─────────────────
+        self._danger_cache_timer += dt
+        if (self._danger_cache_timer >= self._danger_cache_duration
+                or self._danger_cache == (None, None)):
+            bomb_threat, escape_cell = self._nearby_bomb_danger(
+                player_bombs, safety_radius_cells=4
+            )
+            self._danger_cache       = (bomb_threat, escape_cell)
+            self._danger_cache_timer = 0.0
+        else:
+            bomb_threat, escape_cell = self._danger_cache
 
-        if bomb_tháreat is None:
-            # No hay bomba cercana: resetear acumulador
+        if bomb_threat is None:
             self._bomb_perception_timer = 0.0
             self._bomb_perceived        = False
             return None, None
 
-        if self._bomb_perceived:
-            # Ya la percibio: seguir escapando (no resetear)
-            return bomb_tháreat, escape_cell
-
-        # Acumular tiempo de percepcion
-        self._bomb_perception_timer += dt
-        if self._bomb_perception_timer >= self._bomb_áreaction_time:
-            # PERCIBIDA: activar escape y signo '!'
+        # Detección instantánea (Robot)
+        if instant:
             self._bomb_perceived    = True
-            self._exclamation_timer = 1.2   # segundos que dura el '!'
-            return bomb_tháreat, escape_cell
+            self._exclamation_timer = 0.0
+            return bomb_threat, escape_cell
 
-        # Aun no la percibe
+        if self._bomb_perceived:
+            return bomb_threat, escape_cell
+
+        self._bomb_perception_timer += dt
+        if self._bomb_perception_timer >= self._bomb_reaction_time:
+            self._bomb_perceived    = True
+            self._exclamation_timer = 1.2
+            return bomb_threat, escape_cell
+
         return None, None
 
     def _draw_stun_stars(self, screen, screen_x, screen_y, img, zoom):
@@ -1128,6 +1255,302 @@ class LivingEntity(PathfindingEntity):
             self._draw_stun_stars(screen, screen_x, screen_y, img, zoom)
         if self._exclamation_timer > 0:
             self._draw_exclamation(screen, screen_x, screen_y, img, zoom)
+
+
+# CEREBRO DE ENEMIGOS
+
+class EnemyBrain(LivingEntity):
+    """
+    Gestor centralizado de IA para todos los enemigos.
+
+    Se inserta entre LivingEntity y cada enemigo concreto, eliminando el
+    código duplicado de evasión, WAIT y toma de decisiones que antes se
+    repetía en Ghost, Snow, Bear, Barrel, Water y Globe.
+
+    Jerarquía completa:
+        AnimatedEntity → MovableEntity → PathfindingEntity
+            → LivingEntity → EnemyBrain → Ghost / Snow / Bear / ...
+
+    Máquina de estados con prioridades fijas
+    ─────────────────────────────────────────
+    DEAD        Cualquier otra cosa se ignora.
+    STUNNED     Quieto; solo corren timers internos.
+    ESCAPING    Prioridad total: moverse a escape_cell, esperar explosión.
+    WAIT        Post-escape: idle breve para estabilizar posición.
+    CHASING     A* hacia el jugador (dentro del detection_range).
+    WANDERING   random_walk (fuera de rango o sin target).
+
+    Transiciones
+    ─────────────
+    • Percibir bomba del jugador (reaction_time) → ESCAPING
+    • Bomba desaparece / llegar a celda segura    → WAIT
+    • WAIT expira                                 → CHASING / WANDERING
+    • Jugador entra en detection_range            → CHASING
+    • Jugador sale de detection_range             → WANDERING
+
+    Cómo usarlo en un enemigo concreto
+    ────────────────────────────────────
+    1. Heredar de EnemyBrain en vez de LivingEntity.
+    2. En update():
+         state = self.brain_tick(dt, maze, player, player_bombs)
+         if state == EnemyBrain.DEAD:      return
+         if state == EnemyBrain.STUNNED:   return
+         if state == EnemyBrain.ESCAPING:  return   # escape ya ejecutado
+         if state == EnemyBrain.WAIT:      return   # wait ya ejecutado
+         # state == CHASING o WANDERING: añadir lógica especial aquí
+         self.move(dt, maze)
+    3. Siempre terminar con:
+         self.update_death(dt)
+         self.animate(dt, moving=(self.direction != (0, 0)))
+
+    Hooks opcionales (override en subclases)
+    ─────────────────────────────────────────
+    on_start_chase(player)      Llamado al entrar en CHASING la primera vez.
+    on_start_wander()           Llamado al entrar en WANDERING.
+    on_start_escape(bomb, cell) Llamado al detectar la bomba.
+    on_escape_done()            Llamado al terminar el escape.
+    ignore_bricks_while_chasing() → bool  Por defecto False; Ghost lo sobreescribe.
+    """
+
+    # Constantes de estado — usadas externamente para comparar
+    DEAD      = 'dead'
+    STUNNED   = 'stunned'
+    ESCAPING  = 'escaping'
+    WAIT      = 'wait'
+    CHASING   = 'chasing'
+    WANDERING = 'wandering'
+
+    def __init__(self, pos, width, height, speed, animations, lives=1,
+                 detection_range=5, initial_status='down', animation_speed=5):
+        super().__init__(pos, width, height, speed, animations, lives,
+                         detection_range, initial_status, animation_speed)
+
+        # Estado actual de la máquina
+        self._brain_state      = self.WANDERING
+        self._prev_brain_state = None
+
+        # Última posición libre de bombas — usada para desencierro
+        self._last_safe_pos    = (pos[0], pos[1])
+
+        # Caché de detección de bomba: evita recalcular A* cada frame
+        # cuando hay muchas bombas en pantalla
+        self._danger_cache          = (None, None)   # (bomb, escape_cell)
+        self._danger_cache_timer    = 0.0
+        self._danger_cache_duration = 0.15           # recalcular cada 0.15s
+
+    # ── Hooks opcionales ──────────────────────────────────────────────────────
+
+    def on_start_chase(self, player):
+        """Llamado una vez al entrar en CHASING. Override opcional."""
+        pass
+
+    def on_start_wander(self):
+        """Llamado una vez al entrar en WANDERING. Override opcional."""
+        pass
+
+    def on_start_escape(self, bomb, escape_cell):
+        """Llamado una vez al detectar bomba peligrosa. Override opcional."""
+        pass
+
+    def on_escape_done(self):
+        """Llamado cuando el escape termina (bomba explotó o llegó a celda segura)."""
+        pass
+
+    def ignore_bricks_while_chasing(self):
+        """
+        Retorna True si el A* debe ignorar bricks durante CHASING.
+        Ghost lo sobreescribe para devolver self.ghost_mode.
+        """
+        return False
+
+    def get_chase_target(self, player):
+        """
+        Retorna el target real de persecución.
+        Por defecto es el jugador. Bear lo sobreescribe para usar sniff_target.
+        """
+        return player
+
+    def bomb_detection_instant(self):
+        """
+        Retorna True si este enemigo detecta bombas instantáneamente.
+        Por defecto False (usa reaction_time). Robot sobreescribe a True
+        para evitar fuego amigo con sus propias bombas y las del jugador.
+        """
+        return False
+
+    # ── Motor principal ───────────────────────────────────────────────────────
+
+    def brain_tick(self, dt, maze, player, player_bombs=None):
+        """
+        Avanza la máquina de estados un frame y ejecuta la acción correspondiente.
+
+        Debe llamarse AL INICIO del update() del enemigo, antes de cualquier
+        lógica especial. Retorna el estado resultante para que el enemigo
+        decida si necesita añadir comportamiento extra o simplemente retornar.
+
+        Args:
+            dt           : Delta time del frame.
+            maze         : Instancia del laberinto actual.
+            player       : Entidad objetivo (jugador). Puede ser None.
+            player_bombs : Lista de bombas del jugador. None = sin amenaza.
+
+        Returns:
+            str: Una de las constantes DEAD / STUNNED / ESCAPING / WAIT /
+                 CHASING / WANDERING.
+        """
+        # Descontar timers de post-escape incondicionalmente — si solo se
+        # decrementan dentro de update_wait_state, un stun o muerte temporal
+        # los deja atascados y el enemigo nunca vuelve a detectar bombas.
+        if self._escape_cooldown > 0:
+            self._escape_cooldown -= dt
+        if self._in_wait_state:
+            self._wait_timer -= dt
+            if self._wait_timer <= 0:
+                self._in_wait_state = False
+                self._wait_timer    = 0.0
+        # ── 1. DEAD ───────────────────────────────────────────────────────────
+        if self.dead:
+            self._set_state(self.DEAD)
+            self.update_death(dt)
+            self.animate(dt, moving=False)
+            return self.DEAD
+
+        # ── 2. STUNNED ────────────────────────────────────────────────────────
+        if self.is_stunned:
+            # Limpiar escape activo si la bomba ya desapareció durante el stun
+            if self._escaping_bomb:
+                bomb = self._bomb_being_escaped
+                if bomb is None or getattr(bomb, 'remove', False) or getattr(bomb, 'exploded', False):
+                    self._reset_escape_state()
+            self._set_state(self.STUNNED)
+            self.direction = (0, 0)
+            self.update_death(dt)
+            self.animate(dt, moving=False)
+            return self.STUNNED
+
+        # ── 3. ESCAPING — evasión de bomba del jugador ────────────────────────
+        if self._escaping_bomb:
+            bomb = self._bomb_being_escaped
+            if bomb is None or getattr(bomb, 'remove', False) or getattr(bomb, 'exploded', False):
+                self._finish_escape()
+            else:
+                still_escaping = self.smart_bomb_escape(bomb, self._escape_target_cell, maze, dt)
+                if not still_escaping:
+                    self._finish_escape()
+                else:
+                    # Aplicar movimiento físico — _move_toward_cell solo fija
+                    # direction; sin move() el enemigo no se desplaza.
+                    self.move(dt, maze)
+                    self._set_state(self.ESCAPING)
+                    self.update_death(dt)
+                    self.animate(dt, moving=(self.direction != (0, 0)))
+                    return self.ESCAPING
+
+        # Buscar nueva amenaza solo si no estamos en WAIT ni cooldown
+        if not self._in_wait_state and self._escape_cooldown <= 0:
+            # Fusionar bombas del jugador con bombas extra (ej: Robot)
+            # para que la detección sea unificada en un solo sistema.
+            extra = getattr(self, '_extra_bombs', [])
+            bombs_to_check = list(player_bombs or []) + [
+                b for b in extra if b not in (player_bombs or [])
+            ]
+            bomb_threat, escape_cell = self.check_player_bomb_danger(
+                bombs_to_check, maze, dt,
+                instant=self.bomb_detection_instant()
+            )
+            if bomb_threat is not None and escape_cell is not None:
+                escape_cell = self.on_start_escape(bomb_threat, escape_cell) or escape_cell
+                self.smart_bomb_escape(bomb_threat, escape_cell, maze, dt)
+                # Aplicar movimiento físico del primer frame de escape
+                self.move(dt, maze)
+                self._set_state(self.ESCAPING)
+                self.update_death(dt)
+                self.animate(dt, moving=(self.direction != (0, 0)))
+                return self.ESCAPING
+
+        # ── 4. WAIT ───────────────────────────────────────────────────────────
+        if self._in_wait_state:
+            in_wait = self.update_wait_state(dt)
+            if in_wait:
+                self._set_state(self.WAIT)
+                self.update_death(dt)
+                self.animate(dt, moving=(self.direction != (0, 0)))
+                return self.WAIT
+            # WAIT expiró: decidir qué estado sigue
+
+        # ── 5. CHASING / WANDERING ────────────────────────────────────────────
+        # La detección respeta los muros: se basa en la longitud del path A*,
+        # no en la distancia Euclidiana. follow_player ya hace el cálculo del
+        # path internamente, así que aquí solo decidimos el estado y lo dejamos
+        # actuar — si el path es más largo que detection_range, follow_player
+        # llamará random_walk por sí solo.
+        if player is not None and not getattr(player, 'dead', False):
+            new_state = self.CHASING   # follow_player decidirá si perseguir o no
+        else:
+            new_state = self.WANDERING
+
+        # Disparar hooks de transición
+        if new_state != self._brain_state:
+            if new_state == self.CHASING:
+                self.on_start_chase(player)
+            elif new_state == self.WANDERING:
+                self.on_start_wander()
+
+        self._set_state(new_state)
+
+        # Ejecutar movimiento según estado
+        if new_state == self.CHASING:
+            target = self.get_chase_target(player)
+            self.follow_player(maze, target, dt,
+                               ignore_bricks=self.ignore_bricks_while_chasing())
+        else:
+            self.random_walk(dt)
+
+        return new_state
+
+    # ── Helpers internos ──────────────────────────────────────────────────────
+
+    def _set_state(self, new_state):
+        """Actualiza el estado registrando la transición."""
+        self._prev_brain_state = self._brain_state
+        self._brain_state = new_state
+
+    def _finish_escape(self):
+        """Cierra el escape activo y dispara on_escape_done."""
+        self._reset_escape_state()   # → activa WAIT internamente
+        self.on_escape_done()
+
+    def _full_escape_reset(self):
+        """
+        Reset completo de TODOS los flags de escape, sin activar WAIT.
+        Usar cuando el enemigo es aturdido, muere, o necesita un reset duro.
+        """
+        self._escaping_bomb         = False
+        self._escape_target_cell    = None
+        self._escape_committed      = False
+        self._safe_from_bomb        = False
+        self._bomb_being_escaped    = None
+        self._bomb_perception_timer = 0.0
+        self._bomb_perceived        = False
+        self._danger_cache          = (None, None)
+        self._danger_cache_timer    = 0.0
+        self._in_wait_state         = False
+        self._wait_timer            = 0.0
+        self._escape_cooldown       = 0.0
+
+    @property
+    def brain_state(self):
+        """Estado actual legible externamente (para debug)."""
+        return self._brain_state
+
+    def stun(self, duration):
+        """
+        Override: además de aturdir, hace reset completo de flags de escape.
+        Un enemigo aturdido no puede escapar, y sus flags deben quedar limpios
+        para que al recuperarse pueda detectar nuevas amenazas normalmente.
+        """
+        super().stun(duration)
+        self._full_escape_reset()
 
 
 # UTILIDADES

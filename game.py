@@ -1,12 +1,31 @@
 """
-GAME.PY - Game Manager Principal
-=================================
+Game Manager principal del proyecto.
 
-Clase principal que gestiona:
-- Inicialización de Pygame
-- State Manager
-- Game Loop principal
-- Recursos compartidos (fuentes, pantalla)
+Este módulo implementa la clase Game, que actúa como el controlador
+central de la aplicación. Gestiona la inicialización de Pygame, el
+State Manager para flujo de estados, y el game loop principal con
+control de FPS y delta time.
+
+La arquitectura sigue el patrón State donde cada pantalla (menú, juego,
+pausa, game over) es un estado independiente. Game orquesta las transiciones
+y proporciona recursos compartidos como fuentes, pantalla y audio.
+
+Clases Exportadas:
+    - Game: Controlador principal de la aplicación
+
+Funciones Exportadas:
+    - main(): Punto de entrada que crea y ejecuta Game
+
+Uso Típico:
+    from game import main
+    
+    if __name__ == "__main__":
+        main()
+
+Notas:
+    El game loop usa delta time con límite de 50ms por frame para
+    prevenir atravesar muros tras lag spikes o garbage collection.
+    La validación de settings se ejecuta antes de inicializar Pygame.
 """
 
 import pygame
@@ -24,10 +43,52 @@ from states import (
 
 
 class Game:
-    """Clase principal del juego."""
+    """
+    Controlador principal de la aplicación Bomberman.
+    
+    Esta clase centraliza la inicialización de Pygame, gestión de estados,
+    y el game loop principal. Proporciona recursos compartidos (pantalla,
+    fuentes, audio) a todos los estados del juego.
+    
+    El loop principal delega toda la lógica a estados específicos usando
+    el patrón State, manteniendo Game simple y enfocado en orquestación.
+    
+    Attributes:
+        screen (pygame.Surface): Ventana principal del juego.
+        clock (pygame.time.Clock): Reloj para control de FPS.
+        running (bool): Flag de ejecución del game loop.
+        num_players (int): Cantidad de jugadores (1-4).
+        difficulty (str): Dificultad actual ('easy', 'normal', 'hard').
+        font_large (pygame.font.Font): Fuente grande para títulos.
+        font (pygame.font.Font): Fuente mediana para opciones.
+        font_small (pygame.font.Font): Fuente pequeña para hints.
+        state_manager (StateManager): Gestor de transiciones de estado.
+        states (dict): Mapa de nombres a instancias de estados.
+        audio (AudioManager): Gestor centralizado de audio.
+    
+    Notas:
+        Se crea UNA sola instancia de Game por ejecución.
+        Los atributos de estado (num_players, difficulty) se actualizan
+        desde los menús de selección antes de iniciar el gameplay.
+    """
     
     def __init__(self):
-        """Inicializa el juego."""
+        """
+        Inicializa Pygame, recursos compartidos y State Manager.
+        
+        Orden de inicialización:
+        1. Validación de configuración (settings.py)
+        2. Pygame.init() y pygame.mixer.init()
+        3. Ventana y reloj
+        4. Fuentes pixel-art
+        5. AudioManager
+        6. State Manager y todos los estados
+        7. Transición a estado MENU
+        
+        Raises:
+            pygame.error: Si Pygame no puede inicializarse.
+            FileNotFoundError: Si faltan archivos críticos de assets.
+        """
         print("\n" + "="*60)
         print("INICIALIZANDO BOMBERMAN")
         print("="*60)
@@ -62,9 +123,20 @@ class Game:
     
     def _init_fonts(self):
         """
-        Fuentes pixel-art estilo Bomberman retro.
-        Usa 'Press Start 2P' si existe en assets/fonts/PressStart2P.ttf,
-        si no cae a Courier New (monoespaciado).
+        Carga fuentes pixel-art con fallback a fuentes del sistema.
+        
+        Intenta cargar 'Press Start 2P' desde assets/fonts/. Si no existe,
+        usa Courier New (o Courier o monospace según disponibilidad).
+        Como último recurso usa pygame.font.Font(None) con ajuste de tamaño.
+        
+        Crea tres tamaños:
+        - font_large (22pt): Títulos como "BOMBER/MAN"
+        - font (16pt): Opciones de menú
+        - font_small (10pt): Hints y estadísticas
+        
+        Notas:
+            El fallback garantiza que el juego funcione sin assets,
+            útil para testing y distribución mínima.
         """
         import os
         pixel_font_path = os.path.join('assets', 'fonts', 'PressStart2P.ttf')
@@ -86,7 +158,20 @@ class Game:
         print(f"Fuentes pixel (PressStart2P: {os.path.isfile(pixel_font_path)})")
     
     def _init_states(self):
-        """Inicializa el State Manager y todos los estados."""
+        """
+        Crea State Manager y todas las instancias de estados.
+        
+        Orden crítico:
+        1. Crear StateManager
+        2. Instanciar todos los estados (reciben self como game)
+        3. Registrar estados en el manager
+        4. Crear AudioManager (los estados lo usan en enter())
+        5. Cambiar a estado MENU inicial
+        
+        Notas:
+            AudioManager debe crearse ANTES de change_state(MENU)
+            porque MenuState.enter() reproduce música inmediatamente.
+        """
         self.state_manager = StateManager(self)
         
         # Crear todos los estados
@@ -140,18 +225,33 @@ class Game:
     
     def run(self):
         """
-        Loop principal del juego.
+        Ejecuta el game loop principal con control de FPS.
         
-        Este loop es MUCHO más simple que el anterior gracias
-        al State Pattern. Toda la lógica está delegada a los estados.
+        El loop delega toda la lógica de gameplay a estados específicos
+        usando el patrón State. Game solo se encarga de:
+        - Calcular delta time con protección anti-lag
+        - Recopilar eventos de pygame
+        - Delegar handle_events/update/draw al estado actual
+        - Actualizar la pantalla
+        
+        Delta time está limitado a 50ms para prevenir que entidades
+        atraviesen muros tras lag spikes o garbage collection de Python.
+        
+        Notas:
+            El loop termina cuando self.running = False (llamado por quit()).
+            Ejecuta _cleanup() automáticamente al salir.
         """
         print("\nINICIANDO GAME LOOP")
         print("="*60)
         
         while self.running:
-            # Delta time con protección contra lag spikes
+            # Calcular delta time en segundos
             dt = self.clock.tick(FPS) / 1000.0
-            dt = min(dt, 0.05)  # Máximo 50ms por frame (previene saltos de física)
+            
+            # Limitar a 50ms para prevenir atravesar muros tras lag spikes
+            # o pausas por garbage collection. Sin esto, un frame de 200ms
+            # podría mover al jugador 6+ celdas en un solo update.
+            dt = min(dt, 0.05)
             
             # Eventos
             events = pygame.event.get()
@@ -224,8 +324,22 @@ class Game:
 
 def main():
     """
-    Función principal de entrada.
-    Crea y ejecuta el juego.
+    Punto de entrada principal de la aplicación.
+    
+    Crea una instancia de Game y ejecuta su game loop.
+    Captura excepciones para cleanup ordenado y mensajes de error claros.
+    
+    Excepciones manejadas:
+    - KeyboardInterrupt: Ctrl+C del usuario
+    - Exception: Cualquier error fatal con traceback
+    
+    Cleanup garantizado:
+    - pygame.quit() en bloque finally
+    - sys.exit() para terminar proceso
+    
+    Notas:
+        Esta función es llamada desde main.py, que es el entry point
+        del ejecutable. La separación permite testing más fácil.
     """
     try:
         game = Game()

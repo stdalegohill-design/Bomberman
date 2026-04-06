@@ -1,184 +1,58 @@
 """
-ENEMIES.PY - Enemigos con IA
-=============================
+Clases de enemigos con IA y habilidades especiales.
 
-Jerarquía de herencia:
-    AnimatedEntity
-     MovableEntity
-         PathfindingEntity
-             LivingEntity
-                 Ghost, Snow, Bear, Robot, Water, Globe, Barrel
+Este módulo implementa todos los tipos de enemigos del juego, cada uno
+con comportamiento único y habilidades especiales. Todos heredan de
+LivingEntity (excepto Barrel) para aprovechar la jerarquía completa
+de animación, física, IA y sistema de vidas.
 
-Todos los enemigos heredan de LivingEntity (excepto Barrel que hereda
-directamente de LivingEntity sin PathfindingEntity). Esto les da:
-- Animación (AnimatedEntity)
-- Movimiento y colisiones (MovableEntity)
-- Pathfinding A* y evasión de bombas (PathfindingEntity)
-- Sistema de vidas y muerte (LivingEntity)
+Jerarquía de Herencia:
+    pygame.sprite.Sprite
+        AnimatedEntity: Sistema de animación
+            MovableEntity: Física y movimiento
+                PathfindingEntity: IA y pathfinding
+                    LivingEntity: Vidas y muerte
+                        Ghost: Atraviesa muros temporalmente
+                        Snow: Deja rastro de hielo ralentizador
+                        Bear: Enemigo tanque lento y resistente
+                        Robot: Dispara bombas a distancia
+                        Water: Se teletransporta cerca del jugador
+                        Globe: Vuela sobre obstáculos con patrón de rebote
 
-Clases:
--------
+Enemigos Implementados:
+    - Ghost: Modo fantasma atraviesa muros (2s activo, 10s cooldown)
+    - Snow: Crea baldosas de hielo que ralentizan jugadores
+    - Bear: Tanque con 2 vidas y movimiento lento
+    - Robot: Dispara bombas GPS a distancia (no persigue)
+    - Water: Teletransporte cerca del jugador (5s cooldown)
+    - Globe: Vuelo sobre obstáculos con rebote en bordes
+    - Barrel: Enemigo estático destructible (drop de powerup)
 
-Ghost(LivingEntity):
-    Fantasma que atraviesa paredes temporalmente.
-    
-    Hereda de: LivingEntity
-    
-    Habilidad especial:
-    - ghost_mode: Puede atravesar muros (2s duración, 10s cooldown)
-    - Semi-transparente y con aura mientras está activo
-    
-    Atributos únicos:
-    - ghost_mode: Estado de habilidad (bool)
-    - ghost_mode_timer: Tiempo restante de habilidad
-    - ghost_cooldown_timer: Cooldown hasta próxima activación
-    
-    Métodos principales:
-    - activate_ghost_mode(): Activa modo fantasma
-    - update_ghost_mode(): Maneja lógica de habilidad y teleporte
-    - draw(): Renderizado con efecto de transparencia
+Clases Exportadas:
+    - Ghost, Snow, Bear, Robot, Water, Globe, Barrel
 
-Snow(LivingEntity):
-    Enemigo que deja rastro de nieve que ralentiza.
+Uso Típico:
+    # Crear enemigos en nivel
+    ghost = Ghost(pos=(100, 100), maze=maze)
+    robot = Robot(pos=(200, 200), maze=maze)
     
-    Hereda de: LivingEntity
-    
-    Habilidad especial:
-    - Cárea tiles de nieve al moverse
-    - Las tiles ralentizan jugadores al pisarlas
-    
-    Atributos únicos:
-    - snow_tiles: Lista de tiles de nieve activas
-    - snow_trail_timer: Cooldown entre tiles
-    
-    Métodos principales:
-    - cáreate_snow_trail(): Cárea tile de nieve en posición actual
-    - update(): Cárea nieve periódicamente mientras se mueve
-
-Bear(LivingEntity):
-    Oso resistente que puede romper bricks.
-    
-    Hereda de: LivingEntity
-    
-    Habilidad especial:
-    - Puede romper bricks (bloques destructibles)
-    - Olfatea para detectar jugadores lejos
-    
-    Atributos únicos:
-    - sniff_timer: Cooldown de olfateo
-    - sniff_target: Posición detectada por olfato
-    - can_báreak_bricks: Puede romper bloques
-    
-    Métodos principales:
-    - update_sniff(): Detecta jugador a distancia
-    - try_báreak_brick(): Intenta romper brick en celda actual
-    - draw(): Muestra indicador de olfateo
-
-Robot(LivingEntity):
-    Robot que coloca sus propias bombas.
-    
-    Hereda de: LivingEntity
-    
-    Habilidad especial:
-    - Coloca bombas propias (sprite diferente)
-    - Las bombas de Robot no pueden empujar a jugadores
-    
-    Atributos únicos:
-    - bombs: Lista de bombas del Robot
-    - bomb_cooldown: Tiempo entre bombas
-    - active_bomb_count: Cantidad de bombas activas
-    - max_bombs: Máximo de bombas simultáneas
-    
-    Métodos principales:
-    - place_bomb(): Coloca bomba en posición actual
-    - update_bombs(): Actualiza bombas propias
-    - draw(): Renderizado con indicador de bomba lista
-
-Water(LivingEntity):
-    Enemigo acuático que cárea charcos resbaladizos.
-    
-    Hereda de: LivingEntity
-    
-    Habilidad especial:
-    - Cárea charcos al moverse
-    - Los charcos hacen resbalar a jugadores
-    
-    Atributos únicos:
-    - water_puddles: Lista de charcos activos
-    - puddle_timer: Cooldown entre charcos
-    
-    Métodos principales:
-    - update(): Cárea charcos periódicamente
-    - draw(): Renderiza charcos y enemigo
-
-Globe(LivingEntity):
-    Globo que vuela y suelta powerups para enemigos.
-    
-    Hereda de: LivingEntity
-    
-    Habilidad especial:
-    - Vuela periódicamente (invulnerable mientras vuela)
-    - Suelta powerups que benefician a enemigos
-    
-    Atributos únicos:
-    - is_flying: Estado de vuelo
-    - fly_timer: Timer hasta próximo vuelo
-    - flight_offset: Offset visual de altura
-    - enemy_powerups: Lista de powerups activos
-    
-    Métodos principales:
-    - update(): Coordina vuelo y powerups
-    - take_damage(): Solo recibe daño si no vuela
-    - draw(): Renderiza con sombra cuando vuela
-
-Barrel(LivingEntity):
-    Barril que se mueve y spawna enemigos al morir.
-    
-    Hereda de: LivingEntity (con PathfindingEntity completo)
-    
-    Habilidad especial:
-    - Al ser destruido spawna un enemigo aleatorio (Ghost, Snow, Bear o Water)
-    - El enemigo spawneado aparece aturdido temporalmente
-    
-    Atributos únicos:
-    - spawn_enemy_types: Lista de enemigos que puede spawnear
-    - stun_duration: Duración del aturdimiento del enemigo spawneado
-    
-    Métodos principales:
-    - die(): Spawna enemigo aleatorio en su posición
-    - update(): Movimiento y comportamiento normal de enemigo
-
-Sistema común a todos:
-----------------------
-- Detección de jugador en rango
-- Pathfinding A* hacia jugador
-- Evasión inteligente de bombas con tiempo de áreacción
-- Estado WAIT después de huir (anti-vibración)
-- Sistema de stun por bombas pateadas
-- Animaciones por dirección
-
-Configuración:
---------------
-Cada enemigo tiene su config en settings.py:
-- GhostConfig, SnowConfig, BearConfig, etc.
-- Definen: velocidad, vidas, rango, cooldowns
-
-Uso típico:
------------
-    # Cárear enemigo
-    ghost = Ghost(pos=(x, y))
-    
-    # Actualizar cada frame
+    # En game loop
     ghost.update(dt, maze, player)
-    
-    # Dibujar
     ghost.draw(screen, camera)
+
+Notas de Implementación:
+    - Todas las habilidades usan timers para duración y cooldown
+    - Ghost se restringe automáticamente dentro del mapa en ghost_mode
+    - Robot NO persigue, solo dispara cuando jugador está en rango
+    - Water requiere distancia mínima de 3 celdas del jugador
+    - Globe usa física de rebote simple para patrón de vuelo
+    - Barrel no tiene IA (estático) pero sí sistema de vidas
 """
 
 
 import pygame
 import math
-from entities import LivingEntity, load_animations_from_dict
+from entities import LivingEntity, EnemyBrain, load_animations_from_dict
 from settings import GhostConfig, SnowConfig, BearConfig, BarrelConfig, RobotConfig, WaterConfig, GlobeConfig, CELL_SIZE
 import random
 from utils import load_image, pixel_to_grid, grid_to_pixel
@@ -186,7 +60,7 @@ from utils import load_image, pixel_to_grid, grid_to_pixel
 
 # GHOST - Enemigo con modo fantasma
 
-class Ghost(LivingEntity):
+class Ghost(EnemyBrain):
     """
     Fantasma que puede atravesar paredes temporalmente.
     
@@ -362,54 +236,58 @@ class Ghost(LivingEntity):
         return None
 
     def move(self, dt, maze):
-        """Override para incluir logica de ghost mode."""
+        """Override: pasa ignore_collisions según ghost_mode."""
         collided = super().move(dt, maze, ignore_collisions=self.ghost_mode)
-
-        # Activar ghost mode si choca (solo en modo normal)
+        # Activar ghost_mode reactivo si choca en modo normal
         if collided and not self.ghost_mode:
             self.activate_ghost_mode()
-    
+
+    def ignore_bricks_while_chasing(self):
+        """En ghost_mode el A* puede atravesar bricks — esa es la habilidad."""
+        return self.ghost_mode
+
+    def on_start_escape(self, bomb, default_escape_cell):
+        """
+        Si ghost_mode está disponible, activarlo y calcular una celda de
+        escape que pueda atravesar el muro más cercano alejándose de la bomba.
+        Retorna la celda modificada, o None para usar la default.
+        """
+        if self.ghost_cooldown_timer <= 0:
+            self.activate_ghost_mode()
+            cs = self._maze_ref.cell_size if self._maze_ref else 32
+            my_col  = int(self.x // cs)
+            my_row  = int(self.y // cs)
+            bomb_col = int(bomb.x // cs)
+            bomb_row = int(bomb.y // cs)
+            target_col = my_col - 3 if my_col < bomb_col else my_col + 3
+            target_row = my_row - 3 if my_row < bomb_row else my_row + 3
+            maze = self._maze_ref
+            if maze:
+                target_col = max(1, min(target_col, maze.cols - 2))
+                target_row = max(1, min(target_row, maze.rows - 2))
+            return (target_row, target_col)
+        return None   # usar celda default
+
     def update(self, dt, maze, player):
-        """Actualizacion principal del Ghost."""
-        if not self.dead:
-
-            # WAIT state check (previene vibración)
-            if self.update_wait_state(dt):
-                self.update_death(dt)
-                self.animate(dt, moving=(self.direction != (0, 0)))
-                return
-                        #  FIX v3: PRIORIDAD ABSOLUTA al retorno
-            if self._returning_to_empty:
-                self.direction = (0, 0)  # Forzar
-                self.update_ghost_mode(dt, maze)
-                self.update_death(dt)
-                self.animate(dt, moving=True)
-                return
-            
-            # Resto del código original...
-            player_bombs = getattr(player, 'bombs', [])
-            bomb_threat, escape_cell = self.check_player_bomb_danger(
-                player_bombs, maze, dt)
-            if bomb_threat is not None and escape_cell is not None:
-                if not self.ghost_mode:
-                    self.ghost_mode = True
-                    self.ghost_mode_timer = 0.0
-                self._move_toward_cell(escape_cell, maze, dt)
-                self.move(dt, maze)
-                self.update_death(dt)
-                self.animate(dt, moving=(self.direction != (0, 0)))
-                return
-
+        """Actualización principal del Ghost."""
+        # Prioridad absoluta al retorno a celda vacía post-ghost_mode
+        if self._returning_to_empty:
+            self.direction = (0, 0)
             self.update_ghost_mode(dt, maze)
-            distance = math.hypot(player.x - self.x, player.y - self.y)
-            detection_distance = self.detection_range * maze.cell_size
+            self.update_death(dt)
+            self.animate(dt, moving=True)
+            return
 
-            if distance <= detection_distance:
-                self.follow_player(maze, player, dt)
-            else:
-                self.random_walk(dt)
+        player_bombs = getattr(player, 'bombs', [])
+        state = self.brain_tick(dt, maze, player, player_bombs)
 
-            self.move(dt, maze)
+        if state in (self.DEAD, self.STUNNED, self.ESCAPING, self.WAIT):
+            return
+
+        # CHASING / WANDERING: brain_tick ya llamó follow_player o random_walk.
+        # Actualizamos el ghost_mode y aplicamos el movimiento.
+        self.update_ghost_mode(dt, maze)
+        self.move(dt, maze)
 
         self.update_death(dt)
         self.animate(dt, moving=(self.direction != (0, 0)))
@@ -449,7 +327,7 @@ class Ghost(LivingEntity):
 
 # SNOW - Enemigo que deja rastro de nieve
 
-class Snow(LivingEntity):
+class Snow(EnemyBrain):
     """
     Enemigo que deja rastro de nieve que ralentiza.
     
@@ -511,40 +389,21 @@ class Snow(LivingEntity):
             self.last_snow_pos = current_pos
     
     def update(self, dt, maze, player, snow_tiles_list):
-        """Actualizacion principal del Snow."""
-        if not self.dead:
-            # WAIT state check (previene vibración)
-            if self.update_wait_state(dt):
-                self.update_death(dt)
-                self.animate(dt, moving=(self.direction != (0, 0)))
-                return
-            
-            #  Evasion de bombas del jugador con reaction_time 
-            player_bombs = getattr(player, 'bombs', [])
-            bomb_threat, escape_cell = self.check_player_bomb_danger(
-                player_bombs, maze, dt)
-            if bomb_threat is not None and escape_cell is not None:
-                self._move_toward_cell(escape_cell, maze, dt)
-                self.move(dt, maze)
-                self.update_death(dt)
-                self.animate(dt, moving=(self.direction != (0, 0)))
-                return
+        """Actualización principal del Snow."""
+        player_bombs = getattr(player, 'bombs', [])
+        state = self.brain_tick(dt, maze, player, player_bombs)
 
-            distance = math.hypot(player.x - self.x, player.y - self.y)
-            detection_distance = self.detection_range * maze.cell_size
+        if state in (self.DEAD, self.STUNNED, self.ESCAPING, self.WAIT):
+            return
 
-            if distance <= detection_distance:
-                self.follow_player(maze, player, dt)
-            else:
-                self.random_walk(dt)
+        # CHASING / WANDERING: brain_tick ya ejecutó el movimiento de IA.
+        self.move(dt, maze)
 
-            self.move(dt, maze)
-
-            # Crear rastro de nieve
-            self.snow_trail_timer += dt
-            if self.snow_trail_timer >= self.snow_trail_interval:
-                self.create_snow_trail(snow_tiles_list)
-                self.snow_trail_timer = 0.0
+        # Lógica especial del Snow: rastro de nieve
+        self.snow_trail_timer += dt
+        if self.snow_trail_timer >= self.snow_trail_interval:
+            self.create_snow_trail(snow_tiles_list)
+            self.snow_trail_timer = 0.0
 
         self.update_death(dt)
         self.animate(dt, moving=(self.direction != (0, 0)))
@@ -552,7 +411,7 @@ class Snow(LivingEntity):
 
 # BEAR - Enemigo que rompe ladrillos
 
-class Bear(LivingEntity):
+class Bear(EnemyBrain):
     """
     Oso que puede romper ladrillos y olfatear al jugador.
     
@@ -682,47 +541,51 @@ class Bear(LivingEntity):
         self.break_timer = self.break_cooldown
         return True
     
+    def ignore_bricks_while_chasing(self):
+        """Con olfateo activo el Bear atraviesa ladrillos."""
+        return self.sniff_active
+
+    def get_chase_target(self, player):
+        """Con olfateo activo, seguir al sniff_target fijado."""
+        if (self.sniff_active and self.sniff_target
+                and not getattr(self.sniff_target, 'dead', False)
+                and not getattr(self.sniff_target, 'finish', False)):
+            return self.sniff_target
+        return player
+
     def update(self, dt, maze, player, robot_bombs=None):
-        """Actualizacion principal del Bear."""
-        if not self.dead:
-            # WAIT state check (previene vibración)
-            if self.update_wait_state(dt):
-                self.update_death(dt)
-                self.animate(dt, moving=(self.direction != (0, 0)))
-                return
-            
-            if self.break_timer > 0:
-                self.break_timer -= dt
+        """Actualización principal del Bear."""
+        if self.break_timer > 0:
+            self.break_timer -= dt
 
-            #  Evasion de bombas del jugador con reaction_time 
-            player_bombs = getattr(player, 'bombs', [])
-            bomb_threat, escape_cell = self.check_player_bomb_danger(
-                player_bombs, maze, dt)
-            if bomb_threat is not None and escape_cell is not None:
-                self._move_toward_cell(escape_cell, maze, dt)
-                self.move(dt, maze)
-                self.update_death(dt)
-                self.animate(dt, moving=(self.direction != (0, 0)))
-                return
+        # Actualizar olfateo antes de brain_tick para que ignore_bricks_while_chasing
+        # y get_chase_target ya reflejen el estado correcto.
+        self.update_sniff(dt, player)
 
-            self.update_sniff(dt, player)
-            target = self.sniff_target if (self.sniff_active and self.sniff_target) else player
-            if target is None or getattr(target, 'dead', False) or getattr(target, 'finish', False):
-                target = player
+        # Con sniff activo expandimos detection_range para que brain_tick
+        # siempre entre en CHASING independientemente de la distancia.
+        real_range = self.detection_range
+        if self.sniff_active:
+            self.detection_range = 9999
 
-            distance = math.hypot(target.x - self.x, target.y - self.y)
-            detection_distance = self.detection_range * maze.cell_size
+        # Inyectar robot_bombs para detección unificada en brain_tick
+        if robot_bombs:
+            self._extra_bombs = robot_bombs
 
-            if distance <= detection_distance or self.sniff_active:
-                self.follow_player(maze, target, dt,
-                                   ignore_bricks=self.sniff_active,
-                                   robot_bombs=robot_bombs)
-                self.try_break_brick(maze, target)
-            else:
-                self.random_walk(dt)
+        player_bombs = getattr(player, 'bombs', [])
+        state = self.brain_tick(dt, maze, player, player_bombs)
 
-            self.move(dt, maze)
+        self.detection_range = real_range  # restaurar siempre
 
+        if state in (self.DEAD, self.STUNNED, self.ESCAPING, self.WAIT):
+            return
+
+        # CHASING: brain_tick ya ejecutó follow_player con el target correcto.
+        # Solo añadimos try_break_brick.
+        if state == self.CHASING:
+            self.try_break_brick(maze, self.get_chase_target(player))
+
+        self.move(dt, maze)
         self.update_death(dt)
         self.animate(dt, moving=(self.direction != (0, 0)))
     
@@ -742,7 +605,7 @@ class Bear(LivingEntity):
 
 # BARREL - Barril que esconde un enemigo
 
-class Barrel(LivingEntity):
+class Barrel(EnemyBrain):
     """
     Barril que rueda lentamente hacia Bomberman.
     Al morir, libera un enemigo aleatorio que sale aturdido.
@@ -793,7 +656,7 @@ class Barrel(LivingEntity):
     def _pick_spawn_type():
         """Elige el tipo de enemigo según probabilidades de BarrelConfig."""
         weighted = []
-        for etype, prob in BarrelConfig.SPAWN_PROBABILITIES.itemás():
+        for etype, prob in BarrelConfig.SPAWN_PROBABILITIES.items():
             weighted.extend([etype] * int(prob * 100))
         return random.choice(weighted)
 
@@ -815,35 +678,20 @@ class Barrel(LivingEntity):
     # ---- Update ----
 
     def update(self, dt, maze, player):
-        """Actualizacion principal del Barrel."""
-        if not self.dead:
-            #  Evasion de bombas del jugador con reaction_time 
-            player_bombs = getattr(player, 'bombs', [])
-            bomb_threat, escape_cell = self.check_player_bomb_danger(
-                player_bombs, maze, dt)
-            if bomb_threat is not None and escape_cell is not None:
-                self._move_toward_cell(escape_cell, maze, dt)
-                self.move(dt, maze)
-                self.update_death(dt)
-                self.animate(dt, moving=(self.direction != (0, 0)))
-                return
+        """Actualización principal del Barrel."""
+        player_bombs = getattr(player, 'bombs', [])
+        state = self.brain_tick(dt, maze, player, player_bombs)
 
-            distance = math.hypot(player.x - self.x, player.y - self.y)
-            detection_distance = self.detection_range * maze.cell_size
+        if state in (self.DEAD, self.STUNNED, self.ESCAPING, self.WAIT):
+            return
 
-            if distance <= detection_distance:
-                self.follow_player(maze, player, dt)
-            else:
-                self.random_walk(dt)
-
-            self.move(dt, maze)
-
+        self.move(dt, maze)
         self.update_death(dt)
         self.animate(dt, moving=(self.direction != (0, 0)))
 
 # ROBOT - Bomberman enemigo con IA táctica
 
-class Robot(LivingEntity):
+class Robot(EnemyBrain):
     """
     Robot: enemigo que se comporta como un Bomberman malo.
 
@@ -895,13 +743,16 @@ class Robot(LivingEntity):
         #  Bombas 
         self.bombs            = []
         self.bomb_range       = RobotConfig.BOMB_RANGE
-        self._bomb_cooldown   = 0.0     # tiempo hasta que puede volver a poner bomba
-        self._active_count    = 0       # bombas activas actualmente
+        self._bomb_cooldown   = 0.0
+        self._active_count    = 0
 
         #  Ciclo GPS 
         self._state     = self.STATE_CHASING
-        self._gps_timer = RobotConfig.GPS_ACTIVE_TIME   # cuenta regresiva del estado actual
-        self._escape_target = None                       # celda (row, col) de escape
+        self._gps_timer = RobotConfig.GPS_ACTIVE_TIME
+        self._escape_target = None
+
+        # Caché del brick bloqueante (calculado en update, leído en hooks)
+        self._brick_blocking_path_cached = None
 
     # GESTIÓN DE BOMBAS
 
@@ -1156,12 +1007,25 @@ class Robot(LivingEntity):
         self._bomb_cooldown  = RobotConfig.BOMB_COOLDOWN
         return True
 
+    def on_start_escape(self, bomb, default_escape_cell):
+        """Al iniciar escape, cancelar cualquier kick activo en las bombas propias."""
+        for b in self.bombs:
+            if getattr(b, 'is_being_kicked', False):
+                b.is_being_kicked = False
+                b.kick_direction  = (0, 0)
+        return None   # usar celda de escape default
+        """Robot detecta todas las bombas al instante — evita fuego amigo."""
+        return True
+
+    def ignore_bricks_while_chasing(self):
+        """Robot puede romper bricks con bombas GPS, así que ignora bricks en A*."""
+        return bool(self._brick_blocking_path_cached)
+
     # UPDATE PRINCIPAL
 
     def stun(self, duration):
-        """Override: al ser aturdido, resetear GPS a CHASING para evitar quedar inmovil."""
-        super().stun(duration)
-        # Forzar GPS activo cuando se recupere del stun
+        """Override: al ser aturdido, resetear GPS a CHASING para evitar quedar inmóvil."""
+        super().stun(duration)   # EnemyBrain.stun ya llama _full_escape_reset
         self._state     = self.STATE_CHASING
         self._gps_timer = RobotConfig.GPS_ACTIVE_TIME
 
@@ -1171,88 +1035,59 @@ class Robot(LivingEntity):
             self.animate(dt, moving=False)
             return
 
-        #  BUG FIX: stun bloquea TODO: GPS, bombs, movimiento 
-        if self.is_stunned:
-            self.update_bombs(dt, maze)
-            self.update_death(dt)
-            self.animate(dt, moving=False)
-            return
-
-        # Timer de cooldown de bomba
+        # Actualizar cooldown de bomba
         if self._bomb_cooldown > 0:
             self._bomb_cooldown -= dt
 
-        #  Detectar peligro de bomba (propia + jugador) 
-        dangerous = list(self.bombs)
-        if hasattr(player, 'bombs'):
-            dangerous += [b for b in player.bombs
-                          if not getattr(b, 'remove', False)]
+        # Construir lista de todas las bombas peligrosas (propias + jugador)
+        # y pasarlas como _extra_bombs para que brain_tick las detecte.
+        own_bombs = [b for b in self.bombs if not getattr(b, 'remove', False)]
+        player_bombs = [b for b in getattr(player, 'bombs', [])
+                        if not getattr(b, 'remove', False)]
+        self._extra_bombs = own_bombs  # brain_tick fusiona con player_bombs
 
-        bomb_threat, escape_cell = self._nearby_bomb_danger(
-            dangerous, RobotConfig.ESCAPE_RADIUS
+        # Pre-calcular brick bloqueante (usado por ignore_bricks_while_chasing)
+        gps_bombs = [b for b in self._active_bombs()
+                     if getattr(b, '_gps_break_bomb', False)]
+        self._brick_blocking_path_cached = (
+            None if gps_bombs else self._brick_blocking_path(maze, player)
         )
 
-        # Si está escapando, SOLO escapar
-        if bomb_threat is not None and escape_cell is not None:
-            self._state         = self.STATE_ESCAPING
-            self._escape_target = escape_cell
-            self._move_toward_cell(self._escape_target, maze, dt)
+        state = self.brain_tick(dt, maze, player, player_bombs)
+
+        if state in (self.DEAD, self.STUNNED, self.ESCAPING, self.WAIT):
             self.update_bombs(dt, maze)
-            self.move(dt, maze)
+            if state in (self.DEAD, self.STUNNED):
+                return
+            # ESCAPING/WAIT: actualizar bombas propias pero no moverse más
             self.update_death(dt)
             self.animate(dt, moving=(self.direction != (0, 0)))
             return
-        
-        elif self._state == self.STATE_ESCAPING:
-            self._state         = self.STATE_CHASING
-            self._gps_timer     = RobotConfig.GPS_ACTIVE_TIME
-            self._escape_target = None
 
-        #  Movimiento según estado (solo si NO está escapando) 
+        # CHASING / WANDERING: lógica especial del Robot
         if self._update_gps(dt, player, maze):
-            cs = maze.cell_size
-            if hasattr(player, 'hitbox_offset_x'):
-                px = player.x + player.hitbox_offset_x + player.width  // 2
-                py = player.y + player.hitbox_offset_y + player.height // 2
+            if self._brick_blocking_path_cached:
+                # Hay brick bloqueando → colocar bomba GPS para romperlo
+                self._place_bomb_to_break(maze, *self._brick_blocking_path_cached)
             else:
-                px = player.x + player.width  // 2
-                py = player.y + player.height // 2
-            dist_to_player = (
-                abs(int(px // cs) - int((self.x + self.width  // 2) // cs)) +
-                abs(int(py // cs) - int((self.y + self.height // 2) // cs))
-            )
-
-            #  GPS: detectar brick bloqueante 
-            # Solo buscar brick si no hay bomba activa de GPS pendiente
-            gps_bombs = [b for b in self._active_bombs()
-                         if getattr(b, '_gps_break_bomb', False)]
-            brick_target = None
-            if not gps_bombs:
-                brick_target = self._brick_blocking_path(maze, player)
-
-            if brick_target:
-                # Hay brick bloqueando  moverse hacia él (camino ideal)
-                self.follow_player(maze, player, dt, ignore_bricks=True)
-                # Intentar poner bomba cuando esté cerca del brick
-                placed = self._place_bomb_to_break(maze, *brick_target)
-                # No patear ninguna bomba en este modo (evita accidente)
-                # No llamar _try_smart_kick
-
-            else:
-                # Camino libre  perseguir normalmente
-                self.follow_player(maze, player, dt, ignore_bricks=False)
-
-                # Poner bomba si el jugador está cerca
+                # Camino libre → poner bomba si el jugador está cerca
+                cs = maze.cell_size
+                if hasattr(player, 'hitbox_offset_x'):
+                    px = player.x + player.hitbox_offset_x + player.width  // 2
+                    py = player.y + player.hitbox_offset_y + player.height // 2
+                else:
+                    px = player.x + player.width  // 2
+                    py = player.y + player.height // 2
+                dist_to_player = (
+                    abs(int(px // cs) - int((self.x + self.width  // 2) // cs)) +
+                    abs(int(py // cs) - int((self.y + self.height // 2) // cs))
+                )
                 if dist_to_player <= RobotConfig.BOMB_PLACE_RANGE:
                     self._place_bomb(maze)
-
-                # CORREGIDO: Kick inteligente solo si NO hay bombas GPS
                 if self._active_bombs() and not gps_bombs:
                     self._try_smart_kick(player, maze)
 
-        #  Actualizar bombas propias 
         self.update_bombs(dt, maze)
-
         self.move(dt, maze)
         self.update_death(dt)
         self.animate(dt, moving=(self.direction != (0, 0)))
@@ -1294,7 +1129,7 @@ class Robot(LivingEntity):
 
 # WATER - Enemigo teletransportador
 
-class Water(LivingEntity):
+class Water(EnemyBrain):
     """
     Enemigo Water que se teletransporta cerca del jugador y deja charcos resbaladizos.
     
@@ -1349,62 +1184,32 @@ class Water(LivingEntity):
     
     def update(self, dt, maze, target=None):
         """Actualización con teletransporte y charcos."""
-        if self.dead:
-            self.update_death(dt)
-            self.animate(dt, moving=False)
-            return
-
-        # WAIT state check (previene vibración)
-        if self.update_wait_state(dt):
-            self._update_teleport(dt, maze, target)
-            for puddle in self.puddles[:]:
-                puddle.update(dt)
-                if puddle.remove:
-                    self.puddles.remove(puddle)
-            self.update_death(dt)
-            self.animate(dt, moving=(self.direction != (0, 0)))
-            return
-
-        # Actualizar teletransporte
+        # El teletransporte y los charcos corren siempre (incluso en WAIT/DEAD).
         self._update_teleport(dt, maze, target)
-
-        # Actualizar charcos propios (lifetime y fade)
         for puddle in self.puddles[:]:
             puddle.update(dt)
             if puddle.remove:
                 self.puddles.remove(puddle)
-        
-        # ===== SISTEMA DE GENERACIÓN DE CHARCOS =====
-        # Solo dejar charcos cuando NO está teletransportándose
+
+        player_bombs = getattr(target, 'bombs', []) if target else []
+        state = self.brain_tick(dt, maze, target, player_bombs)
+
+        if state in (self.DEAD, self.STUNNED, self.ESCAPING, self.WAIT):
+            return
+
+        # Si está teletransportando no hacer movimiento normal este frame
+        if self.is_teleporting:
+            self.animate(dt, moving=False)
+            return
+
+        # Generación de charcos solo fuera del teletransporte
         if not self.is_teleporting:
             self.puddle_timer -= dt
             if self.puddle_timer <= 0:
                 self._create_puddle()
                 self.puddle_timer = WaterConfig.PUDDLE_DROP_INTERVAL
 
-        # Si está teletransportando no hacer movimiento normal
-        if self.is_teleporting:
-            self.animate(dt, moving=False)
-            return
-
-        #  Evasion de bombas del jugador con reaction_time 
-        if target:
-            player_bombs = getattr(target, 'bombs', [])
-            bomb_threat, escape_cell = self.check_player_bomb_danger(
-                player_bombs, maze, dt)
-            if bomb_threat is not None and escape_cell is not None:
-                self._move_toward_cell(escape_cell, maze, dt)
-                self.move(dt, maze)
-                self.update_death(dt)
-                self.animate(dt, moving=(self.direction != (0, 0)))
-                return
-
-        # Movimiento via pathfinding
-        if target:
-            self.follow_player(maze, target, dt, ignore_bricks=False)
-        else:
-            self.random_walk(dt)
-
+        # CHASING / WANDERING: brain_tick ya ejecutó follow_player o random_walk.
         self.move(dt, maze)
         self.update_death(dt)
         self.animate(dt, moving=(self.direction != (0, 0)))
@@ -1571,7 +1376,7 @@ class Water(LivingEntity):
         self.puddles.append(puddle)
 
 
-class Globe(LivingEntity):
+class Globe(EnemyBrain):
     """
     Enemigo Globe que vuela y suelta powerups para otros enemigos.
     
@@ -1650,59 +1455,57 @@ class Globe(LivingEntity):
             'armor': 10.0          # 10 segundos
         }
     
+    def ignore_bricks_while_chasing(self):
+        """Mientras vuela, el A* puede ignorar bricks."""
+        return self.is_flying
+
+    def on_start_escape(self, bomb, default_escape_cell):
+        """
+        Si puede volar, activar el vuelo para escapar sobre obstáculos.
+        Retorna una celda de escape más alejada aprovechando el vuelo,
+        o None para usar la default.
+        """
+        if not self.is_flying and self.fly_timer <= 0:
+            self.is_flying          = True
+            self.fly_duration_timer = 0.0
+            self.change_animation('flying')
+            # Calcular celda de escape volando (más alejada en diagonal)
+            cs   = self._maze_ref.cell_size if self._maze_ref else 32
+            my_col   = int(self.x // cs)
+            my_row   = int(self.y // cs)
+            bomb_col = int(bomb.x // cs)
+            bomb_row = int(bomb.y // cs)
+            target_col = my_col - 4 if my_col < bomb_col else my_col + 4
+            target_row = my_row - 4 if my_row < bomb_row else my_row + 4
+            maze = self._maze_ref
+            if maze:
+                target_col = max(1, min(target_col, maze.cols - 2))
+                target_row = max(1, min(target_row, maze.rows - 2))
+            return (target_row, target_col)
+        return None
+
     def update(self, dt, maze, target=None, enemies=None):
         """Actualización con vuelo y powerups."""
-        if self.dead:
-            self.update_death(dt)
-            self.animate(dt, moving=False)
-            return
-        
-        # WAIT state check (previene vibración)
-        if self.update_wait_state(dt):
-            self._update_flight(dt, maze)
-            self._update_powerups(dt, enemies)
-            self.enemy_powerups = [p for p in self.enemy_powerups if not p.collected]
-            self.update_death(dt)
-            self.animate(dt, moving=(self.direction != (0, 0)))
-            return
-        
+        # Vuelo y powerups corren siempre (incluso en WAIT/DEAD)
+        self._update_flight(dt, maze)
+        self._update_powerups(dt, enemies)
+        self.enemy_powerups = [p for p in self.enemy_powerups if not p.collected]
+
+        # Descenso a celda vacía post-vuelo: prioridad absoluta igual que
+        # el retorno a celda vacía del Ghost
         if self._descending_to_empty:
             self.direction = (0, 0)
-            self._update_flight(dt, maze)
             self.update_death(dt)
             self.animate(dt, moving=True)
             return
-        
-        self._update_flight(dt, maze)
 
-        # Powerups para enemigos
-        self._update_powerups(dt, enemies)
-        # Limpiar powerups recogidos de la lista propia
-        self.enemy_powerups = [p for p in self.enemy_powerups if not p.collected]
+        player_bombs = getattr(target, 'bombs', []) if target else []
+        state = self.brain_tick(dt, maze, target, player_bombs)
 
-        #  Evasion de bombas del jugador con reaction_time 
-        if target:
-            player_bombs = getattr(target, 'bombs', [])
-            bomb_threat, escape_cell = self.check_player_bomb_danger(
-                player_bombs, maze, dt)
-            if bomb_threat is not None and escape_cell is not None:
-                self._move_toward_cell(escape_cell, maze, dt)
-                if self.is_flying:
-                    self._move_flying(dt, maze)
-                else:
-                    self.move(dt, maze)
-                self.update_death(dt)
-                self.animate(dt, moving=(self.direction != (0, 0)))
-                return
+        if state in (self.DEAD, self.STUNNED, self.ESCAPING, self.WAIT):
+            return
 
-        # Pathfinding (volando ignora bricks)
-        if target:
-            ignore = self.is_flying
-            self.follow_player(maze, target, dt, ignore_bricks=ignore)
-        else:
-            self.random_walk(dt)
-
-        # Movimiento: volando = sin colisiones, normal = con colisiones
+        # CHASING / WANDERING: aplicar movimiento según modo de vuelo
         if self.is_flying:
             self._move_flying(dt, maze)
         else:
@@ -1893,7 +1696,7 @@ class Globe(LivingEntity):
         
         # Crear lista de tipos disponibles (no en cooldown y no al límite)
         available_types = {}
-        for ptype, prob in GlobeConfig.POWERUP_TYPES.itemás():
+        for ptype, prob in GlobeConfig.POWERUP_TYPES.items():
             # Verificar cooldown
             if self.powerup_cooldowns.get(ptype, 0) > 0:
                 continue
@@ -1910,13 +1713,13 @@ class Globe(LivingEntity):
         
         # Normalizar probabilidades
         total_prob = sum(available_types.values())
-        normalized = {k: v/total_prob for k, v in available_types.itemás()}
+        normalized = {k: v/total_prob for k, v in available_types.items()}
         
         # Elegir según probabilidad normalizada
         rand = random.random()
         cumulative = 0.0
         
-        for ptype, prob in normalized.itemás():
+        for ptype, prob in normalized.items():
             cumulative += prob
             if rand <= cumulative:
                 return ptype

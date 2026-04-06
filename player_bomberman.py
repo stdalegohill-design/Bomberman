@@ -300,82 +300,161 @@ class PlayerBomberman(LivingEntity):
 
     # MOVIMIENTO (con hitbox offset)
 
+    # CORNER SLIDING DESACTIVADO PARA DEBUG
+    # Volver a activar después de confirmar que el sistema base funciona
+
+    # MOVIMIENTO (con hitbox offset)
+
+    # MOVIMIENTO (con hitbox offset)
+
+    def _try_corner_slide(self, dx, dy, maze, dt, speed):
+        """
+        Corner Sliding: suaviza la colisión cuando el jugador está ligeramente
+        desalineado respecto a la apertura de un pasillo.
+
+        En vez de calcular geométricamente el centro de celda (lo que genera
+        movimiento erróneo cuando el hitbox-center cae dentro del bloque),
+        prueba ambas direcciones perpendiculares y empuja hacia la que despeja
+        el camino bloqueado.
+
+        Se llama SOLO cuando el eje principal está bloqueado.
+
+        Args:
+            dx, dy:  Dirección de movimiento (-1, 0, 1)
+            maze:    Instancia del laberinto
+            dt:      Delta time en segundos
+            speed:   Velocidad actual del jugador en px/s
+
+        Returns:
+            bool: True si se aplicó el deslizamiento, False si no
+        """
+        cs        = maze.cell_size
+        tolerance = int(cs * 0.35)          # ~14 px para cs=32
+        nudge     = min(speed * dt, tolerance)
+
+        if dx != 0:
+            next_x = self.x + dx * speed * dt
+
+            # Probar si empujar ARRIBA (↑) despeja el movimiento horizontal
+            test_up = pygame.Rect(
+                next_x     + self.hitbox_offset_x,
+                self.y - tolerance + self.hitbox_offset_y,
+                self.width, self.height
+            )
+            # Probar si empujar ABAJO (↓) lo despeja
+            test_dn = pygame.Rect(
+                next_x     + self.hitbox_offset_x,
+                self.y + tolerance + self.hitbox_offset_y,
+                self.width, self.height
+            )
+
+            can_up = not maze.check_collision_with_blocks(test_up)
+            can_dn = not maze.check_collision_with_blocks(test_dn)
+
+            # Solo una dirección libre → empujar hacia ella
+            if can_up and not can_dn:
+                self.y -= nudge
+                return True
+            if can_dn and not can_up:
+                self.y += nudge
+                return True
+            # Ambas bloqueadas o ambas libres → no hacer nada
+            # (ambas libres = espacio abierto, no es esquina real)
+
+        if dy != 0:
+            next_y = self.y + dy * speed * dt
+
+            # Probar si empujar a la IZQUIERDA (←) despeja el movimiento vertical
+            test_lf = pygame.Rect(
+                self.x - tolerance + self.hitbox_offset_x,
+                next_y     + self.hitbox_offset_y,
+                self.width, self.height
+            )
+            # Probar si empujar a la DERECHA (→) lo despeja
+            test_rt = pygame.Rect(
+                self.x + tolerance + self.hitbox_offset_x,
+                next_y     + self.hitbox_offset_y,
+                self.width, self.height
+            )
+
+            can_lf = not maze.check_collision_with_blocks(test_lf)
+            can_rt = not maze.check_collision_with_blocks(test_rt)
+
+            if can_lf and not can_rt:
+                self.x -= nudge
+                return True
+            if can_rt and not can_lf:
+                self.x += nudge
+                return True
+
+        return False
+
     def move(self, dt, maze):
         """
-        Override: colisiones usan el hitbox centrado.
-
-        Se aplica una resolucion de empuje cuando una bomba pateada
-        solapa al jugador, antes de la logica normal de colisiones.
-        Esto evita que Bomberman quede atrapado dentro de un bloque.
+        Movimiento con hitbox offset y corner sliding.
+        El sliding se activa SOLO cuando el eje principal está bloqueado.
         """
         speed = self.get_current_speed()
 
-        # Resolver empuje de bomba pateada ANTES de cualquier movimiento.
-        # Si una bomba en movimiento solapa al jugador, se le expulsa hacia
-        # la celda mas cercana que este libre de bloques.
+
         self._resolve_kicked_bomb_push(maze)
 
-        next_x = self.x + self.direction[0] * speed * dt
-        next_y = self.y + self.direction[1] * speed * dt
+        dx, dy = self.direction
 
+        # Calcular siguiente posición
+        next_x = self.x + dx * speed * dt
+        next_y = self.y + dy * speed * dt
+
+        # Rect en posición objetivo completa
         full_rect = pygame.Rect(
             next_x + self.hitbox_offset_x,
             next_y + self.hitbox_offset_y,
             self.width, self.height
         )
 
-        bomb_collision = self._check_solid_bomb_collision(full_rect)
-
-        if maze.check_collision_with_blocks(full_rect) or bomb_collision:
-            # Intentar eje horizontal solo
-            if self.direction[0] != 0:
-                h_rect = pygame.Rect(
-                    next_x + self.hitbox_offset_x,
-                    self.y + self.hitbox_offset_y,
-                    self.width, self.height
-                )
-                h_bomb_collision = self._check_solid_bomb_collision(h_rect)
-                
-                if not maze.check_collision_with_blocks(h_rect) and not h_bomb_collision:
-                    self.x = next_x
-                else:
-                    cs = maze.cell_size
-                    if self.direction[0] > 0:
-                        right = next_x + self.hitbox_offset_x + self.width
-                        self.x = (right // cs) * cs - self.hitbox_offset_x - self.width
-                    else:
-                        left = next_x + self.hitbox_offset_x
-                        self.x = (left // cs + 1) * cs - self.hitbox_offset_x
-
-            # Intentar eje vertical solo
-            if self.direction[1] != 0:
-                v_rect = pygame.Rect(
-                    self.x + self.hitbox_offset_x,
-                    next_y + self.hitbox_offset_y,
-                    self.width, self.height
-                )
-                v_bomb_collision = self._check_solid_bomb_collision(v_rect)
-                
-                if not maze.check_collision_with_blocks(v_rect) and not v_bomb_collision:
-                    self.y = next_y
-                else:
-                    cs = maze.cell_size
-                    if self.direction[1] > 0:
-                        bottom = next_y + self.hitbox_offset_y + self.height
-                        self.y = (bottom // cs) * cs - self.hitbox_offset_y - self.height
-                    else:
-                        top = next_y + self.hitbox_offset_y
-                        self.y = (top // cs + 1) * cs - self.hitbox_offset_y
-        else:
+        if not maze.check_collision_with_blocks(full_rect) and not self._check_solid_bomb_collision(full_rect):
+            # Sin colisión: mover libremente
             self.x = next_x
             self.y = next_y
+        else:
+            # Movimiento bloqueado — intentar ejes por separado
+            h_moved = False
+            v_moved = False
 
+            if dx != 0:
+                h_rect = pygame.Rect(
+                    next_x + self.hitbox_offset_x,
+                    self.y  + self.hitbox_offset_y,
+                    self.width, self.height
+                )
+                if not maze.check_collision_with_blocks(h_rect) and not self._check_solid_bomb_collision(h_rect):
+                    self.x = next_x
+                    h_moved = True
+
+            if dy != 0:
+                v_rect = pygame.Rect(
+                    self.x  + self.hitbox_offset_x,
+                    next_y  + self.hitbox_offset_y,
+                    self.width, self.height
+                )
+                if not maze.check_collision_with_blocks(v_rect) and not self._check_solid_bomb_collision(v_rect):
+                    self.y = next_y
+                    v_moved = True
+
+            # Corner sliding: si el eje principal sigue bloqueado,
+            # empujar suavemente en la dirección perpendicular.
+            if dx != 0 and not h_moved:
+                self._try_corner_slide(dx, dy, maze, dt, speed)
+            if dy != 0 and not v_moved:
+                self._try_corner_slide(dx, dy, maze, dt, speed)
+
+        # Actualizar rect y pos
         self.rect.topleft = (
             self.x + self.hitbox_offset_x,
             self.y + self.hitbox_offset_y
         )
         self.pos = (self.x, self.y)
-    
+
     def _resolve_kicked_bomb_push(self, maze):
         """
         Expulsa al jugador fuera de cualquier bomba pateada o empujada

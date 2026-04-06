@@ -1,0 +1,6 @@
+.vscode/
+__pycache__/
+
+test_enemies.py
+test_player.py
+test_maze.py

@@ -1,134 +1,42 @@
 """
-MAP.PY - Sistema de Mapa y Cámaras
-===================================
+Sistema de generación y gestión del laberinto.
 
-Implementa el sistema de renderizado del mapa con soporte para:
-- Cámara simple (1 jugador)
-- Cámara split-screen con diagonal dinámica (2 jugadores)
-- Generación procedimental de laberintos con DFS
-- Sistema de tiles (ironbrick, brick, door, empty)
+Este módulo implementa la clase Maze que genera y gestiona el laberinto
+del juego. Usa generación procedural con patrón de tablero de ajedrez
+para garantizar navegabilidad.
 
-Jerarquía de clases:
-    Sin herencia - Clases independientes
+Tipos de Bloques:
+    - EMPTY (0): Espacio vacío navegable
+    - IRONBRICK (1): Muro indestructible de borde
+    - BRICK (2): Ladrillo destructible (drop de powerup)
+    - DOOR (3): Puerta de salida (abre con todas las llaves)
 
-Clases:
--------
+Algoritmo de Generación:
+    1. Llenar bordes con IRONBRICK
+    2. Patrón de tablero de ajedrez interno
+    3. Colocar BRICK en celdas vacías (70% probabilidad)
+    4. Limpiar áreas de spawn de jugadores (3x3)
+    5. Colocar puerta en posición fija
+    6. Flood fill para verificar navegabilidad
 
-Camera:
-    Cámara simple para un jugador.
-    
-    No hereda de ninguna clase
-    Usada por: LevelManager en modo 1 jugador
-    
-    Atributos principales:
-    - x, y: Posición de la cámara en el mundo
-    - width, height: Dimensiones del viewport
-    - map_width, map_height: Dimensiones del mapa completo
-    - zoom: Factor de zoom (actualmente fijo en 1.0)
-    
-    Métodos principales:
-    - update(): Centra cámara en jugador(es) con límites del mapa
-    - apply(): Convierte coordenadas mundo a coordenadas pantalla
+Clases Exportadas:
+    - Maze: Laberinto con generación procedural
 
-_Viewport:
-    Viewport auxiliar para SplitCamera (clase interna).
+Uso Típico:
+    maze = Maze(rows=15, cols=19, cell_size=32)
     
-    No hereda de ninguna clase
-    Usada por: SplitCamera para gestionar cada mitad de pantalla
+    # Verificar colisión
+    rect = pygame.Rect(x, y, width, height)
+    if maze.check_collision_with_blocks(rect):
+        # Bloqueado
     
-    Atributos principales:
-    - screen_rect: Rectángulo de pantalla asignado
-    - x, y: Posición de la cámara en el mundo
-    - map_width, map_height: Dimensiones del mapa
-    
-    Métodos principales:
-    - follow(): Centra viewport en un jugador
-    - follow_diagonal(): Posiciona jugador en zona interior del triángulo
+    # Destruir ladrillo
+    destroyed = maze.destroy_brick_at_pixel(x, y)
 
-SplitCamera:
-    Cámara split-screen para 2 jugadores con división diagonal.
-    
-    No hereda de ninguna clase
-    Usada por: LevelManager en modo 2 jugadores
-    
-    Tipos de división:
-    - 'diagonal_main': Diagonal principal ()
-    - 'diagonal_anti': Diagonal invertida ()
-    - 'horizontal': División horizontal
-    - 'vertical': División vertical
-    
-    Atributos principales:
-    - split_mode: Tipo de división actual
-    - top_left: Viewport para jugador 1
-    - bottom_right: Viewport para jugador 2
-    - screen_w, screen_h: Dimensiones de pantalla
-    
-    Métodos principales:
-    - update(): Actualiza posición de ambos viewports
-    - get_diagonal_clip_x(): Calcula X de la diagonal para cada fila
-    - should_draw_at_position(): Determina qué viewport dibuja cada celda
-    - iter_viewports(): Itera sobre viewports con sus rectángulos
-    - draw_divider(): Dibuja línea divisoria
-
-Maze:
-    Laberinto generado proceduralmente con DFS.
-    
-    No hereda de ninguna clase
-    Usada por: LevelManager para el mapa del nivel
-    
-    Sistema de generación:
-    1. Llena todo con 'ironbrick' (muros indestructibles)
-    2. DFS cárea caminos con 'empty'
-    3. Conecta spawns de jugadores al laberinto
-    4. Cárea sala de la puerta
-    5. Coloca 'brick' (destructibles) con densidad configurable
-    6. Limpia ááreas de spawn
-    
-    Atributos principales:
-    - rows, cols: Dimensiones en celdas
-    - cell_size: Tamaño de cada celda (32px)
-    - grid: Matriz 2D con tipos de celda
-    - tiles: Dict con sprites por tipo
-    - door_row, door_col: Posición de la puerta
-    - door_open: Si la puerta está abierta
-    
-    Métodos principales:
-    - generate(): Genera laberinto completo
-    - draw(): Renderiza mapa (simple o diagonal)
-    - check_collision_with_blocks(): Verifica colisión con bloques sólidos
-    - check_door_collision(): Verifica si jugador alcanzó la puerta
-    
-    Métodos auxiliares de generación:
-    - _dfs_carve(): Algoritmo DFS para cárear caminos
-    - _connect_spawn_to_maze(): Conecta spawn al laberinto
-    - _build_door_room(): Cárea sala de la puerta
-    - _place_bricks(): Coloca ladrillos destructibles
-    - _clear_spawn_aáreas(): Limpia zonas de spawn
-
-Sistema de tiles:
------------------
-- 'ironbrick': Muro indestructible (borde y obstáculos)
-- 'brick': Muro destructible (puede tener powerups)
-- 'door': Puerta de salida (se activa al matar todos los enemigos)
-- 'empty': Celda transitable
-
-Uso típico:
------------
-    # Cámara simple
-    camera = Camera(width, height, map_width, map_height)
-    camera.update(players, dt)
-    screen_x, screen_y = camera.apply(world_x, world_y)
-    
-    # Cámara split
-    camera = SplitCamera(screen_w, screen_h, map_w, map_h)
-    camera.update(players)
-    for viewport, rect, clip in camera.iter_viewports():
-        # Renderizar con clip region
-    
-    # Generar mapa
-    maze = Maze(rows, cols, cell_size, player_start)
-    maze.generate(num_players=2, brick_density=0.18)
-    maze.draw(screen, camera)
+Notas:
+    El algoritmo garantiza que siempre hay camino desde spawn del
+    jugador hasta la puerta. Los bloques en posiciones impares (tablero
+    de ajedrez) son siempre IRONBRICK para evitar mapa completamente vacío.
 """
 
 
